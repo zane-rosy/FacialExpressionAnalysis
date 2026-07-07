@@ -1,0 +1,201 @@
+<main class="page">
+  <section class="hero">
+    <p class="eyebrow">Proyecto de tesis</p>
+    <h1>Analisis facial para valencia y arousal</h1>
+    <p class="lead">
+      Base inicial del sistema web. Esta version resuelve el flujo de carga de imagen y deja
+      preparada la integracion con el detector de emociones y OpenFace.
+    </p>
+  </section>
+
+  <section class="layout">
+    <article class="card">
+      <h2>Entrada</h2>
+      <p class="muted">Primera fase: analisis de imagen.</p>
+
+      <nav class="tabs">
+        <button
+          class="tab"
+          [class.tab-active]="activeTab() === 'upload'"
+          (click)="switchToUpload()"
+        >Archivo</button>
+        <button
+          class="tab"
+          [class.tab-active]="activeTab() === 'webcam'"
+          (click)="switchToWebcam()"
+        >Webcam</button>
+      </nav>
+
+      @if (activeTab() === 'upload') {
+        <label class="upload-zone" for="image-file">
+          <span>Seleccionar imagen</span>
+          <input
+            #imageInput
+            id="image-file"
+            type="file"
+            accept="image/png,image/jpeg,image/bmp"
+            (change)="onFileSelected($event)"
+          />
+        </label>
+
+        @if (selectedFileName()) {
+          <p class="file-name">Archivo: {{ selectedFileName() }}</p>
+        }
+
+        @if (selectedImageUrl()) {
+          <div class="captured-preview">
+            <p class="captured-label">Imagen seleccionada</p>
+            <img [src]="selectedImageUrl()" alt="Vista previa del archivo seleccionado" class="captured-img" />
+          </div>
+        }
+
+        <button class="primary-button" type="button" (click)="submit(imageInput)" [disabled]="isSubmitting()">
+          {{ isSubmitting() ? 'Analizando...' : 'Analizar imagen' }}
+        </button>
+      } @else {
+        <div class="webcam-container">
+          <video #webcamVideo autoplay playsinline muted class="webcam-video"></video>
+
+          @if (!webcamReady()) {
+            <p class="webcam-hint">Iniciando camara...</p>
+          }
+
+          <button
+            class="primary-button"
+            type="button"
+            (click)="captureFromWebcam(webcamVideo)"
+            [disabled]="!webcamReady() || isSubmitting()"
+          >
+            {{ isSubmitting() ? 'Analizando...' : 'Capturar y analizar' }}
+          </button>
+
+          @if (capturedImageUrl()) {
+            <div class="captured-preview">
+              <p class="captured-label">Imagen capturada</p>
+              <img [src]="capturedImageUrl()" alt="Fotograma capturado desde la webcam" class="captured-img" />
+            </div>
+          }
+        </div>
+      }
+
+      @if (errorMessage()) {
+        <p class="error">{{ errorMessage() }}</p>
+      }
+    </article>
+
+    <article class="card">
+      <h2>Resultado</h2>
+
+      @if (result(); as analysis) {
+        <div class="result-grid">
+          <div>
+            <p class="label">Emocion dominante</p>
+            <p class="value">{{ analysis.dominantEmotion }}</p>
+          </div>
+
+          <div>
+            <p class="label">Valencia</p>
+            <p class="value">{{ analysis.valence | number:'1.4-4' }}</p>
+          </div>
+
+          <div>
+            <p class="label">Arousal</p>
+            <p class="value">{{ analysis.arousal | number:'1.4-4' }}</p>
+          </div>
+        </div>
+
+        <div class="russell-card">
+          <p class="label">Plano de Russell</p>
+          <div class="russell-plane">
+            <div class="axis axis-horizontal"></div>
+            <div class="axis axis-vertical"></div>
+
+            <!-- Etiquetas de los ejes -->
+            <span class="axis-label axis-label-x" style="left: 1%; top: 51%;">-1</span>
+            <span class="axis-label axis-label-x" style="left: 51%; top: 52%;">0</span>
+            <span class="axis-label axis-label-x" style="left: 99%; top: 51%;">1</span>
+
+            <span class="axis-label axis-label-y" style="left: 49%; top: 1%;">1</span>
+            <span class="axis-label axis-label-y" style="left: 49%; top: 49%;">0</span>
+            <span class="axis-label axis-label-y" style="left: 49%; top: 99%;">-1</span>
+
+            <!-- Puntos de referencia del circumplejo (28) -->
+            @for (ref of referenceEmotions(); track ref.label) {
+              <div
+                class="ref-dot"
+                [class.ref-outer]="ref.ring === 'outer'"
+                [class.ref-middle]="ref.ring === 'middle'"
+                [class.ref-inner]="ref.ring === 'inner'"
+                [style.left.%]="(ref.x + 1) * 50"
+                [style.top.%]="100 - ((ref.y + 1) * 50)"
+              ></div>
+            }
+
+            <!-- Etiquetas fijas en anillo externo (28) -->
+            @for (pos of labelPositions(); track pos.label) {
+              <span
+                class="ref-label"
+                [style.left.%]="pos.left"
+                [style.top.%]="pos.top"
+              >{{ pos.label }}</span>
+            }
+
+            <!-- Punto del usuario -->
+            <div
+              class="point"
+              [style.left.%]="(analysis.russellPoint.x + 1) * 50"
+              [style.top.%]="100 - ((analysis.russellPoint.y + 1) * 50)"
+              [attr.aria-label]="analysis.russellPoint.label"
+            ></div>
+          </div>
+        </div>
+
+        <div class="columns">
+          <section>
+            <h3>Probabilidades</h3>
+            <ul class="bar-list">
+              @for (item of emotionEntries(); track item.name) {
+                <li>
+                  <div class="bar-header">
+                    <span class="bar-label">{{ item.name }}</span>
+                    <span class="bar-value">{{ item.value | number:'1.6-6' }}</span>
+                  </div>
+                  <div class="bar-track">
+                    <div
+                      class="bar-fill"
+                      [style.width.%]="item.value * 100"
+                      [class.bar-dominant]="item.value === maxProbability()"
+                    ></div>
+                  </div>
+                </li>
+              }
+            </ul>
+          </section>
+
+          <section>
+            <h3>Action Units</h3>
+            <ul class="data-list">
+              @for (item of actionUnitEntries(); track item.name) {
+                <li>
+                  <span>{{ item.name }}</span>
+                  <strong>{{ item.value.raw | number:'1.2-2' }} ({{ item.value.normalized | number:'1.2-2' }})</strong>
+                </li>
+              }
+            </ul>
+          </section>
+        </div>
+
+        <section class="notes">
+          <h3>Estado del procesamiento</h3>
+          <ul>
+            @for (note of analysis.processing.notes; track note) {
+              <li>{{ note }}</li>
+            }
+          </ul>
+        </section>
+      } @else {
+        <p class="muted">Todavia no hay resultados.</p>
+      }
+    </article>
+  </section>
+</main>

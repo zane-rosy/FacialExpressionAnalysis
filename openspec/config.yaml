@@ -1,0 +1,73 @@
+schema: spec-driven
+
+context: |
+  Project: Tesis — Facial Expression Analysis System
+  Stack: Angular 20 (frontend) + FastAPI 0.116 / Python (backend)
+  Architecture: Layered services — AnalysisOrchestrator → EmotionService, OpenFaceService, ValenceArousalService
+  External deps: API_Emotion_Recognition (local legacy), OpenFace 2.2.0 win x64 (local binary)
+  State: Scaffolded with stubs; real integrations pending
+  API contract: camelCase JSON (Pydantic aliases), /api/v1/analysis/image endpoint
+
+strict_tdd: true
+
+testing:
+  backend:
+    runner: pytest  # not yet installed — must be added to requirements.txt
+    available: false
+    command: "pytest"
+    layers:
+      unit: false
+      integration: false
+      e2e: false
+    coverage:
+      available: false
+      command: "pytest --cov=app"
+    quality:
+      linter: false
+      type_checker: false   # mypy not configured
+      formatter: false      # black/ruff not configured
+    note: "No test runner installed. Add pytest + pytest-asyncio + httpx to requirements.txt before any apply phase."
+  frontend:
+    runner: karma/jasmine
+    available: true
+    command: "npm test"
+    workdir: frontend/
+    layers:
+      unit: true             # karma-jasmine present
+      integration: false     # no @testing-library/angular
+      e2e: false             # no Playwright/Cypress
+    coverage:
+      available: true
+      command: "ng test --code-coverage"
+    quality:
+      linter: false          # no eslint config detected
+      type_checker: true     # TypeScript compiler (tsc via tsconfig)
+      formatter: true        # Prettier configured in package.json
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Consider academic justification impact on legacy code changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Stub services must be explicitly identified in scope
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Identify which external tool (OpenFace / API_Emotion_Recognition) is touched
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Mark stub-replacement tasks separately from new feature tasks
+  apply:
+    - Follow existing code patterns
+    tdd: true
+    test_command: "npm test"          # frontend; backend: pytest (after setup)
+    build_command: "ng build"         # frontend
+  verify:
+    test_command: "npm test"
+    build_command: "ng build"
+    coverage_threshold: 0             # raise once backend tests exist
+  archive:
+    - Warn before merging destructive deltas

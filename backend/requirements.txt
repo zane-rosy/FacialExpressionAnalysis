@@ -1,0 +1,10 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+python-multipart==0.0.20
+pydantic==2.11.7
+pydantic-settings==2.10.1
+opencv-python==4.13.0.92
+numpy==2.4.3
+pandas==3.0.1
+dlib-bin==20.0.0; platform_system == "Windows"
+dlib==20.0.0; platform_system != "Windows"
