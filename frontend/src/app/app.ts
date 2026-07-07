@@ -3,6 +3,7 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { ActionUnit, AnalysisResponse } from './core/models/analysis.models';
+import { RUSSELL_EMOTIONS, RussellEmotion } from './core/data/russell-emotions';
 import { AnalysisApiService } from './core/services/analysis-api.service';
 
 @Component({
@@ -173,5 +174,49 @@ export class App {
     const entries = this.emotionEntries();
     if (entries.length === 0) return 0;
     return Math.max(...entries.map(e => e.value));
+  }
+
+  // ------------------------------------------------------------------
+  // Plano de Russell — puntos de referencia
+  // ------------------------------------------------------------------
+
+  /** Los 28 puntos de referencia del modelo circumplejo. */
+  referenceEmotions(): RussellEmotion[] {
+    return RUSSELL_EMOTIONS;
+  }
+
+  /**
+   * Posición de la etiqueta para cada emoción, proyectada radialmente
+   * hacia afuera (radio fijo 1.12) para formar un anillo externo uniforme.
+   */
+  labelPositions(): Array<{ label: string; left: number; top: number }> {
+    return RUSSELL_EMOTIONS.map(e => {
+      const r = Math.hypot(e.x, e.y);
+      const angle = Math.atan2(e.y, e.x);
+      // Project label slightly outward from the dot, capped at 0.90 to stay inside the circle.
+      const labelR = Math.min(r * 1.10, 0.90);
+      const lx = labelR * Math.cos(angle);
+      const ly = labelR * Math.sin(angle);
+      return {
+        label: e.label,
+        left: (lx + 1) * 50,
+        top: 100 - ((ly + 1) * 50),
+      };
+    });
+  }
+
+  /** Las 3 emociones de referencia más cercanas al punto del usuario. */
+  nearestEmotions(): RussellEmotion[] {
+    const point = this.result()?.russellPoint;
+    if (!point) return [];
+
+    return RUSSELL_EMOTIONS
+      .map(e => ({
+        emotion: e,
+        dist: Math.hypot(e.x - point.x, e.y - point.y),
+      }))
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 3)
+      .map(e => e.emotion);
   }
 }
