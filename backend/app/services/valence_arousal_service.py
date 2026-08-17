@@ -50,7 +50,8 @@ class ValenceArousalService:
             emotion_probabilities.get("Tristeza", 0.0),
             emotion_probabilities.get("Enojo", 0.0),
             emotion_probabilities.get("Miedo", 0.0),
-            emotion_probabilities.get("Desprecio", 0.0),
+            emotion_probabilities.get("Asco", 0.0),
+            #emotion_probabilities.get("Desprecio", 0.0),
         )
 
         valence = happiness - negative

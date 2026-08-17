@@ -173,6 +173,7 @@ export class App {
       const file = new File([blob], 'webcam.jpg', { type: 'image/jpeg' });
       this.analyzeFile(file);
     }, 'image/jpeg', 0.95);
+    this.stopWebcam();
   }
 
   // ------------------------------------------------------------------
