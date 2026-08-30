@@ -5,6 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   ActionUnit,
   AnalysisResponse,
+  StimulusMetadata,
   RussellPoint,
   VideoAnalysisResponse,
 } from './core/models/analysis.models';
@@ -41,6 +42,8 @@ export class App {
   protected readonly videoIntervalMs = signal(500);
   protected readonly currentFrameImageUrl = signal<string | null>(null);
   protected readonly pendingRecordingFile = signal<File | null>(null);
+  protected readonly stimulusMetadata = signal<StimulusMetadata | null>(null);
+  protected readonly stimulusLookupPending = signal(false);
 
   // ── Grabación ──
   protected readonly recordingState = signal<RecordingState>('hidden');
@@ -49,7 +52,10 @@ export class App {
   protected readonly stimulusFileName = signal('');
   protected readonly stimulusDuration = signal(0);
   protected readonly recordingLabel = signal('');
+  protected readonly participantId = signal('');
   protected readonly recordingError = signal('');
+  protected readonly stimulusPreviewUrl = signal<string | null>(null);
+  protected readonly recordingCameraReady = signal(false);
 
   private stream: MediaStream | null = null;
   private videoBlobUrl: string | null = null;
@@ -197,6 +203,8 @@ export class App {
     this.videoFileName.set(file?.name ?? '');
     this.currentFrameImageUrl.set(null);
     this.pendingRecordingFile.set(null);
+    this.stimulusMetadata.set(null);
+    this.stimulusLookupPending.set(false);
 
     // Liberar blob URL anterior y crear uno nuevo.
     if (this.videoBlobUrl) URL.revokeObjectURL(this.videoBlobUrl);
@@ -220,6 +228,10 @@ export class App {
     ).subscribe({
       next: (response) => {
         this.videoResult.set(response);
+        if (this.videoFileName() && this.participantId()) {
+          this.analysisApi.updateRecordingMetadata(this.videoFileName(), response.summary.avgValence, response.summary.avgArousal, response.summary.dominantEmotion, response.frames.length)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+        }
         this.selectedVideoFrame.set(0);
         this.isSubmitting.set(false);
         setTimeout(() => this._captureFrameImage(), 0);
@@ -272,7 +284,11 @@ export class App {
     this.recordingState.set('setup');
     this.stimulusFileName.set('');
     this.recordingLabel.set('');
+    this.participantId.set('');
     this.recordingError.set('');
+    this.stimulusMetadata.set(null);
+    this.recordingCameraReady.set(false);
+    setTimeout(() => this._startRecordingCameraPreview(), 0);
   }
 
   cancelRecording(): void {
@@ -284,8 +300,17 @@ export class App {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;
     this.stimulusFileName.set(file?.name ?? '');
+    this.stimulusMetadata.set(null);
+    if (file) {
+      this.stimulusLookupPending.set(true);
+      this.analysisApi.getStimulusMetadata(file.name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: metadata => { this.stimulusMetadata.set(metadata); this.stimulusLookupPending.set(false); },
+        error: () => { this.stimulusMetadata.set(null); this.stimulusLookupPending.set(false); },
+      });
+    }
     if (this.stimulusBlobUrl) URL.revokeObjectURL(this.stimulusBlobUrl);
     this.stimulusBlobUrl = file ? URL.createObjectURL(file) : null;
+    this.stimulusPreviewUrl.set(this.stimulusBlobUrl);
   }
 
   async startRecording(input: HTMLInputElement): Promise<void> {
@@ -300,7 +325,7 @@ export class App {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const stream = this.stream ?? await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       this.stream = stream;
 
       // Webcam preview
@@ -343,6 +368,22 @@ export class App {
     }
   }
 
+  private async _startRecordingCameraPreview(): Promise<void> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      this.stream = stream;
+      const preview = document.querySelector('.recording-camera-setup') as HTMLVideoElement | null;
+      if (preview) {
+        preview.srcObject = stream;
+        await preview.play();
+      }
+      this.recordingCameraReady.set(true);
+    } catch {
+      this.recordingCameraReady.set(false);
+      this.recordingError.set('No se pudo activar la cámara. Verificá los permisos del navegador.');
+    }
+  }
+
   onStimulusReady(video: HTMLVideoElement): void {
     this.stimulusDuration.set(Math.round(video.duration || 0));
   }
@@ -365,11 +406,25 @@ export class App {
   private _onRecordingStopped(): void {
     this._stopRecordingResources();
     const blob = new Blob(this.recordedChunks, { type: 'video/mp4' });
-    const file = new File([blob], 'recording.mp4', { type: 'video/mp4' });
+    const participant = this._safeFilePart(this.participantId());
+    const clip = this.stimulusMetadata()?.clipId
+      ? `devo-${this._safeFilePart(this.stimulusMetadata()!.clipId)}`
+      : 'sin-estimulo';
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const filename = `reaccion_${participant}_${clip}_${date}_${time}.mp4`;
+    const file = new File([blob], filename, { type: 'video/mp4' });
 
     // Guardar la grabación en disco.
     this.recordingState.set('saving');
-    this.analysisApi.saveRecording(file, this.recordingLabel()).pipe(
+    const stimulus = this.stimulusMetadata();
+    this.analysisApi.saveRecording(file, this.recordingLabel(), this.participantId(), stimulus ? {
+      filename: stimulus.filename,
+      clipId: stimulus.clipId,
+      sourceTitle: stimulus.sourceTitle,
+      description: stimulus.descriptionEs || stimulus.descriptionOriginal,
+    } : null).pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: () => {
@@ -391,6 +446,10 @@ export class App {
         this.recordingError.set('No se pudo guardar la grabación.');
       }
     });
+  }
+
+  private _safeFilePart(value: string): string {
+    return value.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'sin-dato';
   }
 
   private _stopRecordingResources(): void {

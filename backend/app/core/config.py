@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # ---- Grabaciones ----
     recording_output_path: str = Field(default_factory=lambda: str(_REPO_ROOT / "recordings"))
 
+    stimulus_video_dir: str = ""
+    stimulus_metadata_file: str = str(_REPO_ROOT / "backend" / "data" / "stimuli.json")
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

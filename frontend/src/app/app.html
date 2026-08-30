@@ -88,7 +88,7 @@
           </button>
 
           <label class="upload-zone upload-zone-sm" for="video-file">
-            <span>Seleccionar video</span>
+            <span>Seleccionar video capturado</span>
             <input
               #videoInput
               id="video-file"
@@ -99,7 +99,16 @@
           </label>
 
           @if (videoFileName()) {
-            <p class="file-name">Video: {{ videoFileName() }}</p>
+            <p class="file-name">Video capturado: {{ videoFileName() }}</p>
+            @if (stimulusMetadata(); as metadata) {
+              <div class="stimulus-info-card captured-stimulus-info">
+                <p class="stimulus-detail"><span class="label">Video estímulo</span>{{ metadata.clipId }}</p>
+                <p class="stimulus-detail"><span class="label">Fuente</span>{{ metadata.sourceTitle || 'No disponible' }}</p>
+                <p class="stimulus-detail"><span class="label">Descripción de video</span>{{ metadata.descriptionEs || metadata.descriptionOriginal || 'No disponible' }}</p>
+              </div>
+            } @else {
+              <p class="muted">Esta reacción no tiene valores de arousal y valence asociados.</p>
+            }
           }
 
           <div class="video-interval">
@@ -432,22 +441,41 @@
 
         @if (recordingState() === 'setup') {
           <h2>Grabar reacción</h2>
-          <p class="muted">Seleccioná el video al que vas a reaccionar y una etiqueta opcional.</p>
+          <p class="muted">Cargá el video estímulo que verá la persona durante la grabación.</p>
 
-          <label class="upload-zone" for="stimulus-file">
-            <span>Seleccionar video estimulo</span>
-            <input
-              #stimulusInput
-              id="stimulus-file"
-              type="file"
-              accept="video/mp4,video/avi,video/quicktime"
-              (change)="onStimulusSelected($event)"
-            />
-          </label>
+          <div class="recording-setup-grid">
+            <div>
+              <label class="upload-zone stimulus-picker" [class.stimulus-picker-selected]="stimulusFileName()" for="stimulus-file">
+                <span>{{ stimulusFileName() ? 'Cambiar video estímulo' : 'Cargar video estímulo' }}</span>
+                <input #stimulusInput id="stimulus-file" type="file" accept="video/mp4,video/avi,video/quicktime" (change)="onStimulusSelected($event)" />
+              </label>
+              @if (stimulusFileName()) {
+                <div class="stimulus-info-card">
+                  <p class="file-name"><span class="label">Video estímulo</span>{{ stimulusFileName() }}</p>
+                  @if (stimulusLookupPending()) {
+                    <p class="muted">Buscando datos del estímulo...</p>
+                  } @else if (stimulusMetadata(); as metadata) {
+                    <p class="stimulus-detail"><span class="label">Fuente</span>{{ metadata.sourceTitle || 'No disponible' }}</p>
+                    <p class="stimulus-detail"><span class="label">Descripción de video</span>{{ metadata.descriptionEs || metadata.descriptionOriginal || 'No disponible' }}</p>
+                  } @else {
+                    <p class="muted">Video fuera del rango esperado; se podrá grabar sin valores de referencia.</p>
+                  }
+                </div>
+              }
+            </div>
+            <div class="recording-camera-panel">
+              <video #setupWebcam autoplay muted playsinline class="recording-camera-setup"></video>
+              <p class="recording-camera-status">{{ recordingCameraReady() ? '● Cámara activa' : 'Cámara no disponible' }}</p>
+            </div>
+          </div>
 
-          @if (stimulusFileName()) {
-            <p class="file-name">Video: {{ stimulusFileName() }}</p>
-          }
+          <input
+            class="label-input"
+            type="text"
+            placeholder="Participante (obligatorio, ej: P03)"
+            [value]="participantId()"
+            (input)="participantId.set($any($event.target).value)"
+          />
 
           <input
             class="label-input"
@@ -459,7 +487,7 @@
 
           <div class="modal-actions">
             <button class="primary-button" type="button"
-              [disabled]="!stimulusFileName()"
+              [disabled]="!stimulusFileName() || !recordingCameraReady() || !participantId().trim()"
               (click)="startRecording(stimulusInput)">
               Iniciar grabación
             </button>

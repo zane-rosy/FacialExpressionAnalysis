@@ -3,9 +3,21 @@ from fastapi import APIRouter, File, Query, UploadFile, status
 from app.schemas.analysis import AnalysisResponse, VideoAnalysisResponse
 from app.services.analysis_orchestrator import AnalysisOrchestrator
 from app.services.video_analysis_orchestrator import VideoAnalysisOrchestrator
+from app.services.stimulus_catalog_service import StimulusCatalogService
 
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
+stimuli = StimulusCatalogService()
+
+
+@router.get("/stimuli/catalog")
+async def stimulus_catalog() -> list[dict[str, object]]:
+    return stimuli.catalog()
+
+
+@router.get("/stimuli/metadata")
+async def stimulus_metadata(filename: str) -> dict[str, object] | None:
+    return stimuli.lookup(filename)
 
 
 @router.post(

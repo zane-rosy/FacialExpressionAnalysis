@@ -51,6 +51,14 @@ export interface VideoAnalysisResponse {
   processing: ProcessingMetadata;
 }
 
+export interface StimulusMetadata {
+  filename: string;
+  clipId: string;
+  sourceTitle: string;
+  descriptionOriginal: string;
+  descriptionEs: string;
+}
+
 // ── Grabaciones ──
 
 export interface RecordingSavedResponse {

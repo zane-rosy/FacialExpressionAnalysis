@@ -157,7 +157,72 @@
   background: #000;
   border-radius: 12px;
   display: block;
+  max-height: 240px;
+  max-width: 420px;
+  object-fit: contain;
   width: 100%;
+}
+
+.recording-setup-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+}
+
+.stimulus-picker {
+  height: 110px;
+  min-height: 0;
+  transition: min-height 180ms ease;
+}
+
+.upload-zone.stimulus-picker-selected {
+  height: 75px;
+  min-height: 0;
+  padding: 4px 14px;
+}
+
+.stimulus-info-card {
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+}
+
+.stimulus-info-card .file-name,
+.stimulus-detail {
+  margin: 5px 0;
+}
+
+.stimulus-info-card .label {
+  color: #93c5fd;
+  display: block;
+  font-size: 0.75rem;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.recording-camera-panel {
+  align-self: center;
+}
+
+.recording-camera-setup {
+  background: #000;
+  border-radius: 12px;
+  display: block;
+  max-height: 240px;
+  min-height: 180px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.recording-camera-status {
+  color: #86efac;
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+  text-align: center;
 }
 
 .recording-timer {

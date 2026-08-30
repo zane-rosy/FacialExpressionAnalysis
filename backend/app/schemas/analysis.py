@@ -92,3 +92,12 @@ class RecordingSavedResponse(BaseModel):
     path: str
     label: str = ""
     recorded_at: str = ""
+
+
+class RecordingAnalysisMetadata(BaseModel):
+    avg_valence: float | None = Field(default=None, alias="avgValence")
+    avg_arousal: float | None = Field(default=None, alias="avgArousal")
+    dominant_emotion: str | None = Field(default=None, alias="dominantEmotion")
+    frames_evaluated: int | None = Field(default=None, alias="framesEvaluated")
+
+    model_config = ConfigDict(populate_by_name=True)
