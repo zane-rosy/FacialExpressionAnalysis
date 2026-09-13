@@ -1,22 +1,32 @@
+import logging
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 
 from app.core.config import settings
-from app.parsers.openface_csv_parser import OpenFaceCsvParser
+from app.parsers.openface_csv_parser import OpenFaceCsvParser, parse_video_csv
 
+logger = logging.getLogger(__name__)
+
+# Timeout para análisis de imagen individual (FaceLandmarkImg.exe). Se mantiene corto
+# intencionalmente: el procesamiento por imagen debería completarse en segundos; usar
+# settings.openface_batch_timeout_seconds para la llamada batch a FeatureExtraction.exe
+# que procesa muchos frames de una sola vez.
 _OPENFACE_TIMEOUT_SECONDS = 30
 
 
 class OpenFaceService:
-    """Ejecuta OpenFace FaceLandmarkImg y retorna los valores de intensidad de AU.
+    """Ejecuta OpenFace y retorna los valores de intensidad de AU.
 
-    El servicio ejecuta OpenFace como subproceso, localiza el CSV que escribe,
-    delega el análisis a :class:`OpenFaceCsvParser` y limpia los archivos temporales.
+    Soporta análisis de imagen individual con FaceLandmarkImg.exe y análisis
+    de directorio de frames con FeatureExtraction.exe -fdir.
     """
 
     def __init__(self) -> None:
         self._parser = OpenFaceCsvParser()
         self._executable = Path(settings.openface_executable_path)
+        self._feature_extraction_exe = Path(settings.openface_feature_extraction_path)
         self._working_dir = Path(settings.openface_working_directory)
 
     def analyze_image(self, image_path: Path) -> dict[str, float]:
@@ -30,7 +40,7 @@ class OpenFaceService:
         Returns
         -------
         dict[str, float]
-            Mapeo de nombre de AU (ej. ``AU01_r``) a valor de intensidad.
+            Mapeo de nombre de AU (ej. ``AU 01``) a valor de intensidad.
 
         Raises
         ------
@@ -75,8 +85,103 @@ class OpenFaceService:
 
         return au_values
 
+    def analyze_frame_directory(self, frame_dir: Path) -> dict[int, dict[str, float]]:
+        """Ejecuta FeatureExtraction.exe sobre *frame_dir* y retorna un mapa frame-índice → AU.
+
+        Invoca ``FeatureExtraction.exe -fdir <dir> -aus -of <csv_path>`` una sola vez.
+        Analiza el CSV resultante con :func:`parse_video_csv`, mapea los números de frame
+        1-based de OpenFace a índices 0-based de la API, y retorna solo las filas donde
+        hay datos de AU disponibles.
+
+        Parameters
+        ----------
+        frame_dir:
+            Directorio que contiene los frames JPEG nombrados ``_frame0000.jpg`` …
+
+        Returns
+        -------
+        dict[int, dict[str, float]]
+            Mapeo de índice de frame 0-based → nombre de AU → valor de intensidad.
+
+        Errors
+        ------
+        RuntimeError
+            Por timeout, código de salida no cero, CSV de salida no encontrado, o error de análisis.
+        """
+        timeout = settings.openface_batch_timeout_seconds
+        logger.info("    → Ejecutando FeatureExtraction.exe -fdir %s (timeout=%ds)...",
+                    frame_dir, timeout)
+
+        # Usar una ruta de salida CSV determinística en un archivo temporal
+        # para saber siempre dónde encontrar el resultado.
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp_f:
+            csv_path = Path(tmp_f.name)
+
+        command = [
+            str(self._feature_extraction_exe),
+            "-fdir", str(frame_dir),
+            "-aus",
+            "-of", str(csv_path),
+        ]
+
+        t0 = time.perf_counter()
+        try:
+            result = subprocess.run(
+                command,
+                cwd=str(self._working_dir),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            self._cleanup_csv(csv_path)
+            raise RuntimeError(
+                f"El procesamiento batch de OpenFace excedió el tiempo límite de {timeout}s "
+                f"para el directorio {frame_dir}"
+            ) from exc
+        except Exception as exc:
+            self._cleanup_csv(csv_path)
+            raise RuntimeError(
+                f"No se pudo lanzar FeatureExtraction.exe en {self._feature_extraction_exe}: {exc}"
+            ) from exc
+
+        t_exe = time.perf_counter() - t0
+        logger.info("    → FeatureExtraction.exe finalizó en %.1fs (código=%d)", t_exe, result.returncode)
+
+        if result.returncode != 0:
+            self._cleanup_csv(csv_path)
+            raise RuntimeError(
+                f"FeatureExtraction.exe terminó con código {result.returncode}.\n"
+                f"stderr: {result.stderr}\nstdout: {result.stdout}"
+            )
+
+        if not csv_path.exists():
+            raise RuntimeError(
+                f"FeatureExtraction.exe finalizó pero no se escribió el CSV de salida: {csv_path}"
+            )
+
+        try:
+            rows = parse_video_csv(csv_path)
+        except Exception as exc:
+            raise RuntimeError(
+                f"No se pudo analizar el CSV de salida de OpenFace en {csv_path}: {exc}"
+            ) from exc
+        finally:
+            self._cleanup_csv(csv_path)
+
+        au_index = {
+            row.frame_number - 1: row.action_units
+            for row in rows
+            if row.action_units
+        }
+        logger.info("    → CSV analizado: %d filas con AU de %d filas totales",
+                    len(au_index), len(rows))
+
+        # Convertir números de frame 1-based de OpenFace a índices 0-based de la API.
+        return au_index
+
     # ------------------------------------------------------------------
-    # Métodos privados
+    # Private helpers
     # ------------------------------------------------------------------
 
     def _find_output_csv(self, image_path: Path) -> Path:
@@ -111,4 +216,4 @@ class OpenFaceService:
             if csv_path.exists():
                 csv_path.unlink()
         except Exception:
-            pass  # Limpieza de mejor esfuerzo; no enmascarar la excepción de quien llama.
+            pass  # Best-effort cleanup; do not mask the caller's exception.

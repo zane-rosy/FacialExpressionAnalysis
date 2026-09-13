@@ -8,11 +8,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 def _default_deps_dir() -> Path:
-    """Retorna el directorio de dependencias por defecto dentro del repositorio.
 
-    Se puede sobrescribir con la variable de entorno ``TESIS_DEPS_DIR``
-    o una entrada en ``.env``.
-    """
     env_override = Path.cwd() / "deps"
     return env_override if env_override.exists() else _REPO_ROOT / "deps"
 
@@ -21,20 +17,16 @@ def _default_openface_executable() -> str:
     return str(_default_deps_dir() / "OpenFace" / "FaceLandmarkImg.exe")
 
 
+def _default_feature_extraction_executable() -> str:
+    return str(_default_deps_dir() / "OpenFace" / "FeatureExtraction.exe")
+
+
 def _default_openface_workdir() -> str:
     return str(_default_deps_dir() / "OpenFace")
 
 
 def _default_emotion_module() -> str:
     return str(_default_deps_dir() / "API_Emotion_Recognition")
-
-
-def _default_shape_predictor() -> str:
-    return str(_default_deps_dir() / "API_Emotion_Recognition" / "shape_predictor_68_face_landmarks.dat")
-
-
-def _default_emotion_parameters() -> str:
-    return str(_default_deps_dir() / "API_Emotion_Recognition" / "mat_parametros_RaFD_CK_1616.csv")
 
 
 class Settings(BaseSettings):
@@ -46,10 +38,16 @@ class Settings(BaseSettings):
     # ---- Rutas de dependencias (todas sobrescribibles vía .env / entorno) ----
 
     openface_executable_path: str = Field(default_factory=_default_openface_executable)
+    openface_feature_extraction_path: str = Field(default_factory=_default_feature_extraction_executable)
+    openface_batch_timeout_seconds: int = 120
     openface_working_directory: str = Field(default_factory=_default_openface_workdir)
     emotion_module_path: str = Field(default_factory=_default_emotion_module)
-    emotion_shape_predictor_path: str = Field(default_factory=_default_shape_predictor)
-    emotion_parameters_path: str = Field(default_factory=_default_emotion_parameters)
+
+    # ---- Grabaciones ----
+    recording_output_path: str = Field(default_factory=lambda: str(_REPO_ROOT / "recordings"))
+
+    stimulus_video_dir: str = ""
+    stimulus_metadata_file: str = str(_REPO_ROOT / "backend" / "data" / "stimuli.json")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

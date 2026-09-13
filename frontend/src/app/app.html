@@ -1,79 +1,163 @@
 <main class="page">
   <section class="hero">
     <p class="eyebrow">Proyecto de tesis</p>
-    <h1>Analisis facial para valencia y arousal</h1>
+    <h1>Sistema de reconocimiento de emociones</h1>
     <p class="lead">
-      Base inicial del sistema web. Esta version resuelve el flujo de carga de imagen y deja
-      preparada la integracion con el detector de emociones y OpenFace.
+      Sistema web para el reconocimiento de emociones en imágenes y videos según el modelo dimensional empleando Unidades de Acción.
     </p>
   </section>
 
   <section class="layout">
     <article class="card">
       <h2>Entrada</h2>
-      <p class="muted">Primera fase: analisis de imagen.</p>
+      <!-- <p class="muted">Primera fase: analisis de imagen.</p> -->
 
       <nav class="tabs">
         <button
           class="tab"
-          [class.tab-active]="activeTab() === 'upload'"
-          (click)="switchToUpload()"
-        >Archivo</button>
+          [class.tab-active]="activeTab() === 'image'"
+          (click)="switchToImage(false)"
+        >Imagen</button>
         <button
           class="tab"
-          [class.tab-active]="activeTab() === 'webcam'"
-          (click)="switchToWebcam()"
-        >Webcam</button>
+          [class.tab-active]="activeTab() === 'video'"
+          (click)="switchToVideo()"
+        >Video</button>
       </nav>
 
-      @if (activeTab() === 'upload') {
-        <label class="upload-zone" for="image-file">
-          <span>Seleccionar imagen</span>
-          <input
-            #imageInput
-            id="image-file"
-            type="file"
-            accept="image/png,image/jpeg,image/bmp"
-            (change)="onFileSelected($event)"
-          />
-        </label>
-
-        @if (selectedFileName()) {
-          <p class="file-name">Archivo: {{ selectedFileName() }}</p>
-        }
-
-        @if (selectedImageUrl()) {
-          <div class="captured-preview">
-            <p class="captured-label">Imagen seleccionada</p>
-            <img [src]="selectedImageUrl()" alt="Vista previa del archivo seleccionado" class="captured-img" />
-          </div>
-        }
-
-        <button class="primary-button" type="button" (click)="submit(imageInput)" [disabled]="isSubmitting()">
-          {{ isSubmitting() ? 'Analizando...' : 'Analizar imagen' }}
-        </button>
-      } @else {
-        <div class="webcam-container">
-          <video #webcamVideo autoplay playsinline muted class="webcam-video"></video>
-
-          @if (!webcamReady()) {
-            <p class="webcam-hint">Iniciando camara...</p>
-          }
-
-          <button
-            class="primary-button"
-            type="button"
-            (click)="captureFromWebcam(webcamVideo)"
-            [disabled]="!webcamReady() || isSubmitting()"
-          >
-            {{ isSubmitting() ? 'Analizando...' : 'Capturar y analizar' }}
+      @if (activeTab() === 'image') {
+        <!--Imagen section-->
+        <div class="tab-container">
+          <!-- Activar cámara (al inicio, estilo ghost-button) -->
+          <button class="ghost-button" type="button" (click)="startWebcam(imageWebcam)" style="width:100%">
+            📷 Activar cámara
           </button>
+
+        <!-- Webcam -->
+        <div class="webcam-section" [class.webcam-section-hidden]="!webcamReady() && !capturedImageUrl()">
+          <video #imageWebcam autoplay playsinline muted
+            class="image-webcam"
+            [class.webcam-active]="webcamReady()"></video>
+
+          @if (webcamReady()) {
+            <button class="primary-button" type="button" (click)="captureFromWebcam(imageWebcam)" [disabled]="isSubmitting()">
+              Capturar y procesar imagen
+            </button>
+          }
 
           @if (capturedImageUrl()) {
             <div class="captured-preview">
               <p class="captured-label">Imagen capturada</p>
-              <img [src]="capturedImageUrl()" alt="Fotograma capturado desde la webcam" class="captured-img" />
+              <img [src]="capturedImageUrl()" alt="Fotograma capturado" class="captured-img" />
             </div>
+          }
+        </div>
+
+          <!-- Subir archivo (más chico) -->
+          <label class="upload-zone upload-zone-sm" for="image-file">
+            <span>Seleccionar imagen</span>
+            <input
+              #imageInput
+              id="image-file"
+              type="file"
+              accept="image/png,image/jpeg,image/bmp"
+              (change)="onFileSelected($event)"
+            />
+          </label>
+
+          @if (selectedFileName()) {
+            <p class="file-name">Archivo: {{ selectedFileName() }}</p>
+          }
+
+          @if (selectedImageUrl()) {
+            <div class="captured-preview">
+              <p class="captured-label">Imagen seleccionada</p>
+              <img [src]="selectedImageUrl()" alt="Vista previa" class="captured-img" />
+            </div>
+          }
+
+          <button class="primary-button" type="button" (click)="submit(imageInput)" [disabled]="isSubmitting()">
+            {{ isSubmitting() ? 'Analizando...' : 'Analizar imagen' }}
+          </button>
+        </div>
+      } @else {
+        <!-- Video -->
+        <div class="tab-container">
+          <button class="ghost-button" type="button" (click)="openRecordingModal()" style="width:100%">
+            🎬 Grabar reacción
+          </button>
+
+          <label class="upload-zone upload-zone-sm" for="video-file">
+            <span>Seleccionar video capturado</span>
+            <input
+              #videoInput
+              id="video-file"
+              type="file"
+              accept="video/mp4,video/avi,video/quicktime,video/x-matroska"
+              (change)="onVideoSelected($event)"
+            />
+          </label>
+
+          @if (videoFileName()) {
+            <p class="file-name">Video capturado: {{ videoFileName() }}</p>
+            @if (stimulusMetadata(); as metadata) {
+              <div class="stimulus-info-card captured-stimulus-info">
+                <p class="stimulus-detail"><span class="label">Video estímulo</span>{{ metadata.clipId }}</p>
+                <p class="stimulus-detail"><span class="label">Fuente</span>{{ metadata.sourceTitle || 'No disponible' }}</p>
+                <p class="stimulus-detail"><span class="label">Descripción de video</span>{{ metadata.descriptionEs || metadata.descriptionOriginal || 'No disponible' }}</p>
+              </div>
+            } @else {
+              <p class="muted">Esta reacción no tiene valores de arousal y valence asociados.</p>
+            }
+          }
+
+          <div class="video-interval">
+            <label for="interval-ms">Intervalo entre frames (ms):</label>
+            <select
+              id="interval-ms"
+              class="interval-select"
+              [value]="videoIntervalMs()"
+              (change)="videoIntervalMs.set(+($any($event.target).value))"
+            >
+              <option [value]="100">100 ms</option>
+              <option [value]="250">250 ms</option>
+              <option [value]="500">500 ms</option>
+              <option [value]="1000">1000 ms (1 s)</option>
+              <option [value]="2000">2000 ms (2 s)</option>
+            </select>
+          </div>
+
+          <button
+            class="primary-button"
+            type="button"
+            (click)="submitVideo(videoInput)"
+            [disabled]="isSubmitting()"
+          >
+            {{ isSubmitting() ? 'Procesando video...' : 'Analizar video' }}
+          </button>
+
+          @if (videoResult(); as vr) {
+            <div class="video-slider-card">
+              <p class="captured-label">
+                Frame {{ selectedVideoFrame() + 1 }} de {{ vr.frames.length }}
+                ({{ vr.frames[selectedVideoFrame()]?.timestampMs ?? 0 }} ms)
+              </p>
+              <input
+                type="range"
+                class="frame-slider"
+                [min]="0"
+                [max]="(vr.frames.length || 1) - 1"
+                [value]="selectedVideoFrame()"
+                (input)="selectVideoFrame(+($any($event.target).value))"
+              />
+            </div>
+
+            @if (currentFrameImageUrl()) {
+              <div class="captured-preview">
+                <p class="captured-label">Frame {{ selectedVideoFrame() + 1 }}</p>
+                <img [src]="currentFrameImageUrl()" alt="Vista previa del frame" class="captured-img" />
+              </div>
+            }
           }
         </div>
       }
@@ -86,116 +170,354 @@
     <article class="card">
       <h2>Resultado</h2>
 
-      @if (result(); as analysis) {
-        <div class="result-grid">
-          <div>
-            <p class="label">Emocion dominante</p>
-            <p class="value">{{ analysis.dominantEmotion }}</p>
+      @if (currentAnalysis(); as analysis) {
+        <!-- Tabs de resultado (solo en video) -->
+        @if (activeTab() === 'video') {
+          <nav class="tabs result-tabs">
+            <button
+              class="tab"
+              [class.tab-active]="resultTab() === 'frame'"
+              (click)="resultTab.set('frame')"
+            >Frame</button>
+            <button
+              class="tab"
+              [class.tab-active]="resultTab() === 'resumen'"
+              (click)="resultTab.set('resumen')"
+            >Resumen</button>
+          </nav>
+        }
+
+        @if (resultTab() === 'frame') {
+          <!-- ======= TAB FRAME ======= -->
+          <div class="result-grid">
+            <div>
+              <p class="label">Emocion dominante</p>
+              <p class="value">{{ analysis.dominantEmotion }}</p>
+            </div>
+
+            <div>
+              <p class="label">Valencia</p>
+              <p class="value">{{ analysis.valence | number:'1.4-4' }}</p>
+            </div>
+
+            <div>
+              <p class="label">Arousal</p>
+              <p class="value">{{ analysis.arousal | number:'1.4-4' }}</p>
+            </div>
           </div>
 
-          <div>
-            <p class="label">Valencia</p>
-            <p class="value">{{ analysis.valence | number:'1.4-4' }}</p>
-          </div>
+          <div class="russell-card">
+            <p class="label">Plano de Russell</p>
+            <div class="russell-plane">
+              <div class="axis axis-horizontal"></div>
+              <div class="axis axis-vertical"></div>
 
-          <div>
-            <p class="label">Arousal</p>
-            <p class="value">{{ analysis.arousal | number:'1.4-4' }}</p>
-          </div>
-        </div>
+              <span class="axis-label axis-label-x" style="left: 1%; top: 51%;">-1</span>
+              <span class="axis-label axis-label-x" style="left: 51%; top: 52%;">0</span>
+              <span class="axis-label axis-label-x" style="left: 99%; top: 51%;">1</span>
 
-        <div class="russell-card">
-          <p class="label">Plano de Russell</p>
-          <div class="russell-plane">
-            <div class="axis axis-horizontal"></div>
-            <div class="axis axis-vertical"></div>
+              <span class="axis-label axis-label-y" style="left: 49%; top: 1%;">1</span>
+              <span class="axis-label axis-label-y" style="left: 49%; top: 49%;">0</span>
+              <span class="axis-label axis-label-y" style="left: 49%; top: 99%;">-1</span>
 
-            <!-- Etiquetas de los ejes -->
-            <span class="axis-label axis-label-x" style="left: 1%; top: 51%;">-1</span>
-            <span class="axis-label axis-label-x" style="left: 51%; top: 52%;">0</span>
-            <span class="axis-label axis-label-x" style="left: 99%; top: 51%;">1</span>
+              @for (ref of referenceEmotions(); track ref.label) {
+                <div
+                  class="ref-dot"
+                  [class.ref-outer]="ref.ring === 'outer'"
+                  [class.ref-middle]="ref.ring === 'middle'"
+                  [class.ref-inner]="ref.ring === 'inner'"
+                  [style.left.%]="(ref.x + 1) * 50"
+                  [style.top.%]="100 - ((ref.y + 1) * 50)"
+                ></div>
+              }
 
-            <span class="axis-label axis-label-y" style="left: 49%; top: 1%;">1</span>
-            <span class="axis-label axis-label-y" style="left: 49%; top: 49%;">0</span>
-            <span class="axis-label axis-label-y" style="left: 49%; top: 99%;">-1</span>
+              @for (pos of labelPositions(); track pos.label) {
+                <span
+                  class="ref-label"
+                  [style.left.%]="pos.left"
+                  [style.top.%]="pos.top"
+                >{{ pos.label }}</span>
+              }
 
-            <!-- Puntos de referencia del circumplejo (28) -->
-            @for (ref of referenceEmotions(); track ref.label) {
+              <!-- Punto único del frame actual -->
               <div
-                class="ref-dot"
-                [class.ref-outer]="ref.ring === 'outer'"
-                [class.ref-middle]="ref.ring === 'middle'"
-                [class.ref-inner]="ref.ring === 'inner'"
-                [style.left.%]="(ref.x + 1) * 50"
-                [style.top.%]="100 - ((ref.y + 1) * 50)"
+                class="point"
+                [style.left.%]="(analysis.russellPoint.x + 1) * 50"
+                [style.top.%]="100 - ((analysis.russellPoint.y + 1) * 50)"
+                [attr.aria-label]="analysis.russellPoint.label"
               ></div>
-            }
-
-            <!-- Etiquetas fijas en anillo externo (28) -->
-            @for (pos of labelPositions(); track pos.label) {
-              <span
-                class="ref-label"
-                [style.left.%]="pos.left"
-                [style.top.%]="pos.top"
-              >{{ pos.label }}</span>
-            }
-
-            <!-- Punto del usuario -->
-            <div
-              class="point"
-              [style.left.%]="(analysis.russellPoint.x + 1) * 50"
-              [style.top.%]="100 - ((analysis.russellPoint.y + 1) * 50)"
-              [attr.aria-label]="analysis.russellPoint.label"
-            ></div>
+            </div>
           </div>
-        </div>
 
-        <div class="columns">
-          <section>
-            <h3>Probabilidades</h3>
-            <ul class="bar-list">
-              @for (item of emotionEntries(); track item.name) {
-                <li>
-                  <div class="bar-header">
-                    <span class="bar-label">{{ item.name }}</span>
-                    <span class="bar-value">{{ item.value | number:'1.6-6' }}</span>
-                  </div>
-                  <div class="bar-track">
-                    <div
-                      class="bar-fill"
-                      [style.width.%]="item.value * 100"
-                      [class.bar-dominant]="item.value === maxProbability()"
-                    ></div>
-                  </div>
-                </li>
-              }
-            </ul>
-          </section>
+          <div class="columns">
+            <section>
+              <h3>Probabilidades</h3>
+              <ul class="bar-list">
+                @for (item of emotionEntries(); track item.name) {
+                  <li>
+                    <div class="bar-header">
+                      <span class="bar-label">{{ item.name }}</span>
+                      <span class="bar-value">{{ item.value | number:'1.6-6' }}</span>
+                    </div>
+                    <div class="bar-track">
+                      <div
+                        class="bar-fill"
+                        [style.width.%]="item.value * 100"
+                        [class.bar-dominant]="item.value === maxProbability()"
+                      ></div>
+                    </div>
+                  </li>
+                }
+              </ul>
+            </section>
 
-          <section>
-            <h3>Action Units</h3>
-            <ul class="data-list">
-              @for (item of actionUnitEntries(); track item.name) {
-                <li>
-                  <span>{{ item.name }}</span>
-                  <strong>{{ item.value.raw | number:'1.2-2' }} ({{ item.value.normalized | number:'1.2-2' }})</strong>
-                </li>
-              }
-            </ul>
-          </section>
-        </div>
+            <section>
+              <h3>Action Units</h3>
+              <ul class="data-list">
+                @for (item of actionUnitEntries(); track item.name) {
+                  <li>
+                    <span>{{ item.name }}</span>
+                    <strong>{{ item.value.raw | number:'1.2-2' }} ({{ item.value.normalized | number:'1.2-2' }})</strong>
+                  </li>
+                }
+              </ul>
+            </section>
+          </div>
+        } @else {
+          <!-- ======= TAB RESUMEN ======= -->
+          @if (videoResult(); as vr) {
+            <div class="summary-grid">
+              <div>
+                <p class="label">Frames procesados</p>
+                <p class="value">{{ vr.summary.totalFrames }}</p>
+              </div>
+              <div>
+                <p class="label">Emoción dominante</p>
+                <p class="value">{{ vr.summary.dominantEmotion }}</p>
+              </div>
+              <div>
+                <p class="label">Valencia promedio</p>
+                <p class="value">{{ vr.summary.avgValence | number:'1.4-4' }}</p>
+              </div>
+              <div>
+                <p class="label">Arousal promedio</p>
+                <p class="value">{{ vr.summary.avgArousal | number:'1.4-4' }}</p>
+              </div>
+            </div>
 
-        <section class="notes">
-          <h3>Estado del procesamiento</h3>
-          <ul>
-            @for (note of analysis.processing.notes; track note) {
-              <li>{{ note }}</li>
-            }
-          </ul>
-        </section>
+            <div class="russell-card">
+              <p class="label">Trayectoria en el plano de Russell</p>
+              <div class="russell-plane">
+                <div class="axis axis-horizontal"></div>
+                <div class="axis axis-vertical"></div>
+
+                <span class="axis-label axis-label-x" style="left: 1%; top: 51%;">-1</span>
+                <span class="axis-label axis-label-x" style="left: 51%; top: 52%;">0</span>
+                <span class="axis-label axis-label-x" style="left: 99%; top: 51%;">1</span>
+
+                <span class="axis-label axis-label-y" style="left: 49%; top: 1%;">1</span>
+                <span class="axis-label axis-label-y" style="left: 49%; top: 49%;">0</span>
+                <span class="axis-label axis-label-y" style="left: 49%; top: 99%;">-1</span>
+
+                @for (ref of referenceEmotions(); track ref.label) {
+                  <div
+                    class="ref-dot"
+                    [class.ref-outer]="ref.ring === 'outer'"
+                    [class.ref-middle]="ref.ring === 'middle'"
+                    [class.ref-inner]="ref.ring === 'inner'"
+                    [style.left.%]="(ref.x + 1) * 50"
+                    [style.top.%]="100 - ((ref.y + 1) * 50)"
+                  ></div>
+                }
+
+                @for (pos of labelPositions(); track pos.label) {
+                  <span
+                    class="ref-label"
+                    [style.left.%]="pos.left"
+                    [style.top.%]="pos.top"
+                  >{{ pos.label }}</span>
+                }
+
+                <!-- Línea de trayectoria que conecta los puntos -->
+                <svg class="trajectory-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polyline
+                    [attr.points]="trajectoryLinePoints()"
+                    fill="none"
+                    stroke="rgba(192, 132, 252, 0.35)"
+                    stroke-width="0.4"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+
+                <!-- Todos los puntos del video -->
+                @for (tp of trajectoryPoints(); track $index) {
+                  <div
+                    class="trajectory-dot"
+                    [class.trajectory-active]="$index === selectedVideoFrame()"
+                    [style.left.%]="(tp.x + 1) * 50"
+                    [style.top.%]="100 - ((tp.y + 1) * 50)"
+                  ></div>
+                }
+              </div>
+            </div>
+
+            <div class="timeline-charts">
+              <section class="timeline-card">
+                <p class="label">Valencia en el tiempo</p>
+                <svg class="timeline-svg" viewBox="0 0 100 20">
+                  <!-- Líneas de referencia cada 0.5 -->
+                  <line x1="0" y1="2" x2="100" y2="2" stroke="rgba(148,163,184,0.15)" stroke-width="0.3"/>
+                  <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(148,163,184,0.08)" stroke-width="0.2" stroke-dasharray="1,1"/>
+                  <line x1="0" y1="10" x2="100" y2="10" stroke="rgba(148,163,184,0.25)" stroke-width="0.3"/>
+                  <line x1="0" y1="14" x2="100" y2="14" stroke="rgba(148,163,184,0.08)" stroke-width="0.2" stroke-dasharray="1,1"/>
+                  <line x1="0" y1="18" x2="100" y2="18" stroke="rgba(148,163,184,0.15)" stroke-width="0.3"/>
+                  <!-- Etiquetas -->
+                  <text x="1" y="3.5" fill="rgba(148,163,184,0.35)" font-size="1.8">1</text>
+                  <text x="1" y="7.5" fill="rgba(148,163,184,0.25)" font-size="1.8">0.5</text>
+                  <text x="1" y="11.5" fill="rgba(148,163,184,0.35)" font-size="1.8">0</text>
+                  <text x="1" y="15.5" fill="rgba(148,163,184,0.25)" font-size="1.8">-0.5</text>
+                  <text x="1" y="19.5" fill="rgba(148,163,184,0.35)" font-size="1.8">-1</text>
+                  <!-- Línea de datos -->
+                  <polyline
+                    [attr.points]="timelineLinePoints(vr.summary.valenceTimeline)"
+                    fill="none"
+                    stroke="#38bdf8"
+                    stroke-width="0.5"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </section>
+
+              <section class="timeline-card">
+                <p class="label">Arousal en el tiempo</p>
+                <svg class="timeline-svg" viewBox="0 0 100 20">
+                  <!-- Líneas de referencia cada 0.5 -->
+                  <line x1="0" y1="2" x2="100" y2="2" stroke="rgba(148,163,184,0.15)" stroke-width="0.3"/>
+                  <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(148,163,184,0.08)" stroke-width="0.2" stroke-dasharray="1,1"/>
+                  <line x1="0" y1="10" x2="100" y2="10" stroke="rgba(148,163,184,0.25)" stroke-width="0.3"/>
+                  <line x1="0" y1="14" x2="100" y2="14" stroke="rgba(148,163,184,0.08)" stroke-width="0.2" stroke-dasharray="1,1"/>
+                  <line x1="0" y1="18" x2="100" y2="18" stroke="rgba(148,163,184,0.15)" stroke-width="0.3"/>
+                  <!-- Etiquetas -->
+                  <text x="1" y="3.5" fill="rgba(148,163,184,0.35)" font-size="1.8">1</text>
+                  <text x="1" y="7.5" fill="rgba(148,163,184,0.25)" font-size="1.8">0.5</text>
+                  <text x="1" y="11.5" fill="rgba(148,163,184,0.35)" font-size="1.8">0</text>
+                  <text x="1" y="15.5" fill="rgba(148,163,184,0.25)" font-size="1.8">-0.5</text>
+                  <text x="1" y="19.5" fill="rgba(148,163,184,0.35)" font-size="1.8">-1</text>
+                  <!-- Línea de datos -->
+                  <polyline
+                    [attr.points]="timelineLinePoints(vr.summary.arousalTimeline)"
+                    fill="none"
+                    stroke="#f97316"
+                    stroke-width="0.5"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </section>
+            </div>
+          }
+        }
       } @else {
         <p class="muted">Todavia no hay resultados.</p>
       }
     </article>
   </section>
+
+  <!-- Modal de grabación -->
+  @if (recordingState() !== 'hidden') {
+    <div class="modal-backdrop" (click)="cancelRecording()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+
+        @if (recordingState() === 'setup') {
+          <h2>Grabar reacción</h2>
+          <p class="muted">Cargá el video estímulo que verá la persona durante la grabación.</p>
+
+          <div class="recording-setup-grid">
+            <div>
+              <label class="upload-zone stimulus-picker" [class.stimulus-picker-selected]="stimulusFileName()" for="stimulus-file">
+                <span>{{ stimulusFileName() ? 'Cambiar video estímulo' : 'Cargar video estímulo' }}</span>
+                <input #stimulusInput id="stimulus-file" type="file" accept="video/mp4,video/avi,video/quicktime" (change)="onStimulusSelected($event)" />
+              </label>
+              @if (stimulusFileName()) {
+                <div class="stimulus-info-card">
+                  <p class="file-name"><span class="label">Video estímulo</span>{{ stimulusFileName() }}</p>
+                  @if (stimulusLookupPending()) {
+                    <p class="muted">Buscando datos del estímulo...</p>
+                  } @else if (stimulusMetadata(); as metadata) {
+                    <p class="stimulus-detail"><span class="label">Fuente</span>{{ metadata.sourceTitle || 'No disponible' }}</p>
+                    <p class="stimulus-detail"><span class="label">Descripción de video</span>{{ metadata.descriptionEs || metadata.descriptionOriginal || 'No disponible' }}</p>
+                  } @else {
+                    <p class="muted">Video fuera del rango esperado; se podrá grabar sin valores de referencia.</p>
+                  }
+                </div>
+              }
+            </div>
+            <div class="recording-camera-panel">
+              <video #setupWebcam autoplay muted playsinline class="recording-camera-setup"></video>
+              <p class="recording-camera-status">{{ recordingCameraReady() ? '● Cámara activa' : 'Cámara no disponible' }}</p>
+            </div>
+          </div>
+
+          <input
+            class="label-input"
+            type="text"
+            placeholder="Participante (obligatorio, ej: P03)"
+            [value]="participantId()"
+            (input)="participantId.set($any($event.target).value)"
+          />
+
+          <input
+            class="label-input"
+            type="text"
+            placeholder="Etiqueta (opcional, ej: sesion1_tristeza)"
+            [value]="recordingLabel()"
+            (input)="recordingLabel.set($any($event.target).value)"
+          />
+
+          <div class="modal-actions">
+            <button class="primary-button" type="button"
+              [disabled]="!stimulusFileName() || !recordingCameraReady() || !participantId().trim()"
+              (click)="startRecording(stimulusInput)">
+              Iniciar grabación
+            </button>
+            <button class="ghost-button" type="button" (click)="cancelRecording()">Cancelar</button>
+          </div>
+        }
+
+        @if (recordingState() === 'countdown') {
+          <div class="countdown-number">{{ countdownValue() }}</div>
+        }
+
+        @if (recordingState() === 'recording') {
+          <div class="recording-layout">
+            <div class="recording-main">
+              <video #stimulusVideo autoplay muted class="recording-stimulus"
+                (ended)="onStimulusEnded()"
+                (loadedmetadata)="onStimulusReady($any($event.target))"></video>
+              <p class="recording-timer">{{ recordingElapsed() | number:'1.0-0' }}s / {{ stimulusDuration() | number:'1.0-0' }}s</p>
+            </div>
+            <div class="recording-pip">
+              <video #webcamPreview autoplay muted playsinline class="recording-webcam"></video>
+              <p class="recording-status">● Grabando</p>
+              <button class="ghost-button stop-button" type="button" (click)="stopRecording()">Detener</button>
+            </div>
+          </div>
+        }
+
+        @if (recordingState() === 'saving') {
+          <h2>Guardando grabación...</h2>
+          <p class="muted">Subiendo el video al servidor.</p>
+        }
+
+        @if (recordingState() === 'error') {
+          <h2>Error</h2>
+          <p class="error">{{ recordingError() }}</p>
+          <button class="primary-button" type="button" (click)="cancelRecording()">Cerrar</button>
+        }
+
+      </div>
+    </div>
+  }
 </main>
