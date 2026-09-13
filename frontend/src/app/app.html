@@ -283,15 +283,6 @@
               </ul>
             </section>
           </div>
-
-          <section class="notes">
-            <h3>Estado del procesamiento</h3>
-            <ul>
-              @for (note of analysis.processing.notes; track note) {
-                <li>{{ note }}</li>
-              }
-            </ul>
-          </section>
         } @else {
           <!-- ======= TAB RESUMEN ======= -->
           @if (videoResult(); as vr) {

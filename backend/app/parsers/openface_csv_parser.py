@@ -5,6 +5,15 @@ import pandas as pd
 
 _DEFAULT_CONFIDENCE_THRESHOLD = 0.5
 
+# AUs disponibles en el módulo de análisis de AUs de FaceReader.
+# Se conservan con el formato normalizado que expone este parser (AU NN).
+FACEREADER_ACTION_UNITS = frozenset({
+    "AU 01", "AU 02", "AU 04", "AU 05", "AU 06",
+    "AU 07", "AU 09", "AU 10", "AU 12", "AU 14",
+    "AU 15", "AU 17", "AU 18", "AU 20", "AU 23",
+    "AU 24", "AU 25", "AU 26", "AU 27", "AU 43",
+})
+
 
 @dataclass(frozen=True)
 class ParsedVideoAuRow:
@@ -62,11 +71,13 @@ def _load_dataframe(csv_path: Path) -> tuple[pd.DataFrame, list[str]]:
 
 
 def _au_dict_from_series(series: pd.Series, au_columns: list[str]) -> dict[str, float]:
-    """Build a ``{AU NN: float}`` dict from a DataFrame row and a list of AU column names."""
+
     result: dict[str, float] = {}
     for col in au_columns:
-        au_number = col.replace("AU", "").replace("_r", "")
-        result[f"AU {au_number}"] = float(series[col])
+        au_number = col.replace("AU", "").replace("_r", "").zfill(2)
+        au_name = f"AU {au_number}"
+        if au_name in FACEREADER_ACTION_UNITS:
+            result[au_name] = float(series[col])
     return result
 
 
