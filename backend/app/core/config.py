@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     openface_batch_timeout_seconds: int = 120
     openface_working_directory: str = Field(default_factory=_default_openface_workdir)
     emotion_module_path: str = Field(default_factory=_default_emotion_module)
+    face_normalization_enabled: bool = False
 
     # ---- Grabaciones ----
     recording_output_path: str = Field(default_factory=lambda: str(_REPO_ROOT / "recordings"))

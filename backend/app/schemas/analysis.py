@@ -20,6 +20,25 @@ class RussellPoint(BaseModel):
     label: str
 
 
+class DimensionalAffectMatch(BaseModel):
+    label: str
+    valence: float
+    arousal: float
+    distance: float
+    proximity_weight: float = Field(alias="proximityWeight")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DimensionalAffect(BaseModel):
+    label: str
+    distance: float
+    proximity_weight: float = Field(alias="proximityWeight")
+    top_matches: list[DimensionalAffectMatch] = Field(alias="topMatches")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ProcessingMetadata(BaseModel):
     input_type: str = Field(alias="inputType")
     frames_processed: int = Field(alias="framesProcessed")
@@ -36,6 +55,7 @@ class AnalysisResponse(BaseModel):
     valence: float
     arousal: float
     russell_point: RussellPoint = Field(alias="russellPoint")
+    dimensional_affect: DimensionalAffect = Field(alias="dimensionalAffect")
     processing: ProcessingMetadata
 
     model_config = ConfigDict(populate_by_name=True)
@@ -78,7 +98,10 @@ class VideoAnalysisResponse(BaseModel):
     """Respuesta completa del análisis de video."""
     frames: list[FrameResult]
     summary: VideoSummary
+    duration_ms: float = Field(alias="durationMs")
     processing: ProcessingMetadata
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ─────────────────────────────────────────────────────────────

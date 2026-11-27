@@ -127,6 +127,15 @@
             </select>
           </div>
 
+          <!-- <label class="normalized-frames-option">
+            <input
+              type="checkbox"
+              [checked]="saveNormalizedFrames()"
+              (change)="saveNormalizedFrames.set($any($event.target).checked)"
+            />
+            Guardar frames normalizados para inspección
+          </label> -->
+
           <button
             class="primary-button"
             type="button"
@@ -168,7 +177,14 @@
     </article>
 
     <article class="card">
-      <h2>Resultado</h2>
+      <div class="result-header">
+        <h2>Resultado</h2>
+        @if (activeTab() === 'video' && resultTab() === 'resumen' && videoResult()) {
+          <button class="ghost-button result-download-button" type="button" (click)="downloadVideoAnalysisJson()">
+            Descargar JSON por frame
+          </button>
+        }
+      </div>
 
       @if (currentAnalysis(); as analysis) {
         <!-- Tabs de resultado (solo en video) -->
@@ -192,7 +208,7 @@
           <div class="result-grid">
             <div>
               <p class="label">Emocion dominante</p>
-              <p class="value">{{ analysis.dominantEmotion }}</p>
+              <p class="value">{{ comparableDominantEmotion(analysis) }}</p>
             </div>
 
             <div>
@@ -204,6 +220,17 @@
               <p class="label">Arousal</p>
               <p class="value">{{ analysis.arousal | number:'1.4-4' }}</p>
             </div>
+          </div>
+
+          <div class="dimensional-wide">
+            <p class="label">Estado afectivo dimensional</p>
+            <p class="value">{{ translateAffectiveState(analysis.dimensionalAffect.label) }}</p>
+            <p class="dimensional-neighbors">
+              Cercanía en el plano:
+              @for (match of analysis.dimensionalAffect.topMatches.slice(0, 3); track match.label; let i = $index) {
+                <span>{{ translateAffectiveState(match.label) }} ({{ match.distance | number:'1.3-3' }}){{ i < 2 ? ' · ' : '' }}</span>
+              }
+            </p>
           </div>
 
           <div class="russell-card">
@@ -220,14 +247,12 @@
               <span class="axis-label axis-label-y" style="left: 49%; top: 49%;">0</span>
               <span class="axis-label axis-label-y" style="left: 49%; top: 99%;">-1</span>
 
-              @for (ref of referenceEmotions(); track ref.label) {
+              @for (ref of referenceEmotions(); track ref.name) {
                 <div
                   class="ref-dot"
-                  [class.ref-outer]="ref.ring === 'outer'"
-                  [class.ref-middle]="ref.ring === 'middle'"
-                  [class.ref-inner]="ref.ring === 'inner'"
-                  [style.left.%]="(ref.x + 1) * 50"
-                  [style.top.%]="100 - ((ref.y + 1) * 50)"
+                  [class.ref-dot-primary]="isPrimaryAffectiveState(ref.name)"
+                  [style.left.%]="(ref.valence + 1) * 50"
+                  [style.top.%]="100 - ((ref.arousal + 1) * 50)"
                 ></div>
               }
 
@@ -286,25 +311,49 @@
         } @else {
           <!-- ======= TAB RESUMEN ======= -->
           @if (videoResult(); as vr) {
-            <div class="summary-grid">
+            <div class="summary-meta-grid">
               <div>
                 <p class="label">Frames procesados</p>
                 <p class="value">{{ vr.summary.totalFrames }}</p>
               </div>
               <div>
-                <p class="label">Emoción dominante</p>
-                <p class="value">{{ vr.summary.dominantEmotion }}</p>
+                <p class="label">Duración del video</p>
+                <p class="value">{{ videoDurationSeconds() | number:'1.1-1' }} s</p>
+              </div>
+            </div>
+            <!-- @if (vr.processing.notes.length) {
+              <div class="processing-notes">
+                @for (note of vr.processing.notes; track note) {
+                  <p class="muted">{{ note }}</p>
+                }
+              </div>
+            } -->
+            <div class="result-grid summary-result-grid">
+              <div>
+                <p class="label">Emocion dominante</p>
+                <p class="value">{{ comparableVideoDominantEmotion() }}</p>
               </div>
               <div>
-                <p class="label">Valencia promedio</p>
+                <p class="label">Valencia</p>
                 <p class="value">{{ vr.summary.avgValence | number:'1.4-4' }}</p>
               </div>
               <div>
-                <p class="label">Arousal promedio</p>
+                <p class="label">Arousal</p>
                 <p class="value">{{ vr.summary.avgArousal | number:'1.4-4' }}</p>
               </div>
             </div>
-
+            @if (videoDimensionalAffect(); as dimensional) {
+              <div class="video-dimensional-summary">
+                <p class="label">Estado afectivo dimensional</p>
+                <p class="value">{{ translateAffectiveState(dimensional.label) }}</p>
+                <p class="dimensional-neighbors">
+                  Cercanía en el plano:
+                  @for (match of dimensional.topMatches; track match.label; let i = $index) {
+                    <span>{{ translateAffectiveState(match.label) }} ({{ match.distance | number:'1.3-3' }}){{ i < 2 ? ' · ' : '' }}</span>
+                  }
+                </p>
+              </div>
+            }
             <div class="russell-card">
               <p class="label">Trayectoria en el plano de Russell</p>
               <div class="russell-plane">
@@ -319,14 +368,12 @@
                 <span class="axis-label axis-label-y" style="left: 49%; top: 49%;">0</span>
                 <span class="axis-label axis-label-y" style="left: 49%; top: 99%;">-1</span>
 
-                @for (ref of referenceEmotions(); track ref.label) {
+                @for (ref of referenceEmotions(); track ref.name) {
                   <div
                     class="ref-dot"
-                    [class.ref-outer]="ref.ring === 'outer'"
-                    [class.ref-middle]="ref.ring === 'middle'"
-                    [class.ref-inner]="ref.ring === 'inner'"
-                    [style.left.%]="(ref.x + 1) * 50"
-                    [style.top.%]="100 - ((ref.y + 1) * 50)"
+                    [class.ref-dot-primary]="isPrimaryAffectiveState(ref.name)"
+                    [style.left.%]="(ref.valence + 1) * 50"
+                    [style.top.%]="100 - ((ref.arousal + 1) * 50)"
                   ></div>
                 }
 

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Comparación manual de imagen: MorphCast</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,sans-serif}body{max-width:1100px;margin:24px auto;padding:0 18px;background:#0f172a;color:#e2e8f0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{border:1px solid #334155;border-radius:12px;padding:18px;background:#1e293b}img,video{width:100%;max-height:480px;object-fit:contain;background:#020617;border-radius:8px}button{margin:5px 4px 5px 0;padding:9px 13px;border:0;border-radius:7px;background:#38bdf8;color:#082f49;font-weight:700;cursor:pointer}button:disabled{opacity:.5;cursor:wait}input{max-width:100%}#status{color:#fbbf24;margin:10px 0}table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{padding:8px;border-bottom:1px solid #475569;text-align:left}.muted{color:#94a3b8}.ok{color:#86efac}.warn{color:#fca5a5}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <h1>Comparación manual: imagen vs MorphCast</h1>
+  <p class="muted">Herramienta experimental. No forma parte del flujo principal de la aplicación.</p>
+  <div id="status">Seleccioná una imagen.</div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Imagen</h2>
+      <input id="imageFile" type="file" accept="image/*">
+      <br><br>
+      <img id="preview" alt="Vista previa" hidden>
+      <video id="morphVideo" muted playsinline hidden></video>
+      <br>
+      <button id="analyze" disabled>Analizar y comparar</button>
+    </section>
+    <section class="card">
+      <h2>Resultado</h2>
+      <table>
+        <tbody>
+          <tr><th></th><th>Mi sistema</th><th>MorphCast</th><th>Error absoluto</th></tr>
+          <tr><td>Emoción</td><td id="sysEmotion">—</td><td id="morphEmotion">—</td><td>—</td></tr>
+          <tr><td>Valencia</td><td id="sysValence">—</td><td id="morphValence">—</td><td id="valenceError">—</td></tr>
+          <tr><td>Arousal</td><td id="sysArousal">—</td><td id="morphArousal">—</td><td id="arousalError">—</td></tr>
+          <tr><td>Atención</td><td>—</td><td id="morphAttention">—</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <details><summary>Respuesta del backend</summary><pre id="raw">—</pre></details>
+      <details><summary>Evento completo de MorphCast</summary><pre id="morphRaw">—</pre></details>
+    </section>
+  </div>
+
+  <script src="https://ai-sdk.morphcast.com/v1.17/ai-sdk.js"></script>
+  <script>
+    const API = 'http://localhost:8000/api/v1/analysis/image';
+    const KEY = 'sk74658e19e6ee96471d9a7ccb3405606c91142ae67be5';
+    const fileInput = document.getElementById('imageFile');
+    const preview = document.getElementById('preview');
+    const video = document.getElementById('morphVideo');
+    const analyze = document.getElementById('analyze');
+    const status = document.getElementById('status');
+    let file = null, imageUrl = null, morphSdk = null, morphStop = null, morphTerminate = null, imageStream = null;
+    let latestMorph = null;
+
+    const n = value => Number.isFinite(Number(value)) ? Number(value) : null;
+    const fmt = value => n(value) == null ? '—' : n(value).toFixed(4);
+
+    fileInput.onchange = () => {
+      file = fileInput.files?.[0] ?? null;
+      if (!file) return;
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl = URL.createObjectURL(file);
+      preview.src = imageUrl;
+      preview.hidden = false;
+      analyze.disabled = false;
+      status.textContent = 'Imagen lista. Presioná Analizar y comparar.';
+    };
+
+    window.addEventListener(CY.modules().EVENT_BARRIER.eventName, event => {
+      const data = event.detail || {};
+      const av = data.face_arousal_valence || {};
+      const emotion = data.face_emotion || {};
+      const attention = data.face_attention || {};
+      latestMorph = {
+        dominantEmotion: emotion.dominantEmotion ?? null,
+        valence: n(av.valence), arousal: n(av.arousal), attention: n(attention.attention), raw: data
+      };
+      renderMorph(latestMorph);
+    });
+
+    analyze.onclick = async () => {
+      if (!file) return;
+      analyze.disabled = true;
+      status.textContent = 'Analizando imagen con el backend…';
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const response = await fetch(API, { method: 'POST', body: form });
+        if (!response.ok) throw new Error(`Backend respondió ${response.status}`);
+        const result = await response.json();
+        renderSystem(result);
+        status.textContent = 'Backend listo. Preparando MorphCast…';
+        await runMorphCast();
+      } catch (error) {
+        status.textContent = `Error: ${error.message}`;
+        analyze.disabled = false;
+      }
+    };
+
+    async function runMorphCast() {
+      if (!window.CY) throw new Error('No se cargó el SDK de MorphCast.');
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      const source = new Image();
+      source.src = imageUrl;
+      await source.decode();
+      canvas.width = source.naturalWidth;
+      canvas.height = source.naturalHeight;
+      context.drawImage(source, 0, 0);
+      imageStream = canvas.captureStream(8);
+      video.srcObject = imageStream;
+      video.hidden = false;
+      await video.play();
+
+      const morphSource = CY.createSource.fromVideoElement(video);
+      morphSdk = await CY.loader()
+        .licenseKey(KEY)
+        .source(morphSource)
+        .addModule(CY.modules().FACE_DETECTOR.name, {smoothness: 0.7})
+        .addModule(CY.modules().FACE_EMOTION.name, {smoothness: 0.7})
+        .addModule(CY.modules().FACE_AROUSAL_VALENCE.name, {smoothness: 0.7})
+        .addModule(CY.modules().FACE_ATTENTION.name, {smoothness: 0.7})
+        .load();
+      const instance = morphSdk;
+      morphStop = () => instance.stop();
+      morphTerminate = () => instance.terminate();
+      await instance.start();
+      status.textContent = 'MorphCast ejecutándose sobre la imagen. Esperando detección…';
+      setTimeout(() => {
+        if (latestMorph) status.textContent = 'Comparación completada.';
+        else status.textContent = 'MorphCast no devolvió datos todavía; probá con una imagen frontal y bien iluminada.';
+        stopMorphCast();
+        analyze.disabled = false;
+      }, 8000);
+    }
+
+    function stopMorphCast() {
+      if (morphStop) {
+        try { morphStop(); } catch (error) { console.warn('No se pudo detener MorphCast', error); }
+      }
+      if (morphTerminate) {
+        try { morphTerminate(); } catch (error) { console.warn('No se pudo cerrar MorphCast', error); }
+      }
+      morphStop = null;
+      morphTerminate = null;
+      if (video) {
+        video.pause();
+        video.srcObject = null;
+      }
+      if (imageStream) {
+        imageStream.getTracks().forEach(track => track.stop());
+        imageStream = null;
+      }
+      morphSdk = null;
+    }
+
+    function renderSystem(result) {
+      const valence = n(result.valence), arousal = n(result.arousal);
+      document.getElementById('sysEmotion').textContent = result.dominantEmotion ?? '—';
+      document.getElementById('sysValence').textContent = fmt(valence);
+      document.getElementById('sysArousal').textContent = fmt(arousal);
+      document.getElementById('raw').textContent = JSON.stringify(result, null, 2);
+      if (latestMorph) renderMorph(latestMorph);
+    }
+
+    function renderMorph(result) {
+      document.getElementById('morphEmotion').textContent = result.dominantEmotion ?? '—';
+      document.getElementById('morphValence').textContent = fmt(result.valence);
+      document.getElementById('morphArousal').textContent = fmt(result.arousal);
+      document.getElementById('morphAttention').textContent = fmt(result.attention);
+      document.getElementById('morphRaw').textContent = JSON.stringify(result.raw, null, 2);
+      const systemValence = n(document.getElementById('sysValence').textContent);
+      const systemArousal = n(document.getElementById('sysArousal').textContent);
+      document.getElementById('valenceError').textContent = systemValence == null || result.valence == null ? '—' : fmt(Math.abs(systemValence - result.valence));
+      document.getElementById('arousalError').textContent = systemArousal == null || result.arousal == null ? '—' : fmt(Math.abs(systemArousal - result.arousal));
+    }
+  </script>
+</body>
+</html>
+
