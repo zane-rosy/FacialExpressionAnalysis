@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Análisis independiente del sistema</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,sans-serif}body{max-width:1150px;margin:24px auto;padding:0 18px;background:#0f172a;color:#e2e8f0}.card{border:1px solid #334155;border-radius:12px;padding:18px;background:#1e293b;margin-bottom:18px}input,button{padding:9px 12px;border-radius:7px;border:0}button{background:#38bdf8;color:#082f49;font-weight:700;cursor:pointer}.muted{color:#94a3b8}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #475569;text-align:left} @media(max-width:800px){table{font-size:.82rem;display:block;overflow:auto;white-space:nowrap}}
+  </style>
+</head>
+<body>
+  <h1>Análisis independiente del sistema propuesto</h1>
+  <p class="muted">Los segmentos se calculan con todos los fotogramas válidos del sistema. No se utiliza ningún emparejamiento temporal con MorphCast.</p>
+  <section class="card">
+    <label>Cargar JSON por frame del sistema: <input id="systemFile" type="file" accept=".json,application/json"></label><br><br>
+    <label>Cargar video de la grabación (opcional, para usar su duración real): <input id="recordingFile" type="file" accept="video/*"></label>
+    <p id="status" class="muted">Todavía no se cargó un resultado.</p>
+  </section>
+  <section class="card">
+    <h2>Ventana temporal móvil del sistema</h2>
+    <p id="movingDescription" class="muted">Ventanas temporales móviles. Se utilizan únicamente los timestamps y muestras válidas del sistema.</p>
+    <pre id="movingWindows">Cargá un JSON para calcular las ventanas.</pre>
+  </section>
+  <section class="card">
+    <h2>Resumen global</h2>
+    <table><thead><tr><th>n</th><th>Valencia promedio</th><th>Excitación promedio</th><th>Emoción categórica predominante</th><th>Estado afectivo dimensional</th></tr></thead><tbody id="global"></tbody></table>
+  </section>
+  <section class="card">
+    <h2>Resumen por segmentos temporales</h2>
+    <p id="duration" class="muted">Duración utilizada: —</p>
+    <table><thead><tr><th>Segmento</th><th>Intervalo</th><th>n</th><th>Valencia promedio</th><th>Excitación promedio</th><th>Emoción categórica predominante</th><th>Estado afectivo dimensional</th><th>ΔV DEVO</th><th>ΔE DEVO</th></tr></thead><tbody id="segments"></tbody></table>
+  </section>
+  <section class="card">
+    <h2>Comparación independiente con DEVO</h2>
+    <p class="muted">Ingresá valores normalizados del estímulo. Se muestran diferencias absolutas entre promedios; no son MAE.</p>
+    <label>Valencia DEVO <input id="devoValence" type="number" min="-1" max="1" step="0.001"></label>
+    <label>Excitación DEVO <input id="devoArousal" type="number" min="-1" max="1" step="0.001"></label>
+    <p id="devoResult">—</p>
+  </section>
+  <script src="analysis-utils.js"></script>
+  <script>
+    const U = AnalysisUtils;
+    let rows = [], globalSummary = null, realDurationMs = null;
+    const value = (number) => number == null ? '—' : number.toFixed(3);
+    const formatMs = (number) => number == null ? '—' : Number(number).toFixed(1);
+    const render = () => {
+      document.getElementById('movingDescription').textContent = `Ventanas de ${U.movingWindowMs} ms desplazadas cada ${U.movingStepMs} ms. Se utilizan únicamente los timestamps y muestras válidas del sistema.`;
+      globalSummary = U.summarize(rows);
+      document.getElementById('global').innerHTML = `<tr><td>${globalSummary.n}</td><td>${value(globalSummary.valence)}</td><td>${value(globalSummary.arousal)}</td><td>${globalSummary.categorical}</td><td>${globalSummary.dimensional}</td></tr>`;
+      const totalDuration = realDurationMs > 0 ? realDurationMs : 0;
+      document.getElementById('duration').textContent = totalDuration > 0
+        ? `Duración utilizada: ${(totalDuration / 1000).toFixed(3)} s (duración real del video).`
+        : 'No hay duración real disponible. Cargá el video original o un JSON generado por el backend con durationMs.';
+      const devoV = Number(document.getElementById('devoValence').value), devoE = Number(document.getElementById('devoArousal').value);
+      const hasDevo = Number.isFinite(devoV) && Number.isFinite(devoE);
+      document.getElementById('segments').innerHTML = totalDuration > 0 ? U.segments(rows, totalDuration).map(segment => {
+        const summary = U.summarize(segment.rows);
+        return `<tr><td>${segment.index + 1}</td><td>${(segment.from / 1000).toFixed(3)}–${(segment.to / 1000).toFixed(3)} s</td><td>${summary.n}</td><td>${value(summary.valence)}</td><td>${value(summary.arousal)}</td><td>${summary.categorical}</td><td>${summary.dimensional}</td><td>${hasDevo && summary.valence != null ? value(Math.abs(summary.valence - devoV)) : '—'}</td><td>${hasDevo && summary.arousal != null ? value(Math.abs(summary.arousal - devoE)) : '—'}</td></tr>`;
+      }).join('') : '';
+      updateDevo();
+      renderMovingWindows();
+    };
+    const renderMovingWindows = () => {
+      const totalDuration = realDurationMs > 0 ? realDurationMs : 0;
+      const analysis = U.movingWindowAnalysis(rows, totalDuration);
+      if (!analysis.windows.length) { document.getElementById('movingWindows').textContent = 'No hay duración real o muestras válidas para calcular ventanas.'; return; }
+      const lines = [`Ventanas evaluadas: ${analysis.windows.length}`, `Ventanas válidas: ${analysis.eligibleWindows.length} (${(analysis.eligibleWindows.length / analysis.windows.length * 100).toFixed(1)}%)`, `medianIntervalMs=${analysis.medianIntervalMs?.toFixed(3) ?? '—'} · expectedSamples=${analysis.expectedSamples?.toFixed(3) ?? '—'} · minSamples=${analysis.minSamples ?? '—'} · cobertura mínima=${U.movingMinCoverageMs} ms`, ''];
+      analysis.windows.forEach(window => lines.push(`${formatMs(window.startMs)}–${formatMs(window.endMs)} ms · n=${window.n} · primera=${formatMs(window.firstTimestampMs)} · última=${formatMs(window.lastTimestampMs)} · cobertura=${formatMs(window.coverageMs)} ms · V=${value(window.valence)} · E=${value(window.arousal)}${analysis.maximum === window ? '  ← máxima válida' : ''}${analysis.minimum === window ? '  ← mínima válida' : ''}`));
+      const describe = (label, selected) => selected
+        ? `${label}: ${formatMs(selected.startMs)}–${formatMs(selected.endMs)} ms · n=${selected.n} · primera=${formatMs(selected.firstTimestampMs)} · última=${formatMs(selected.lastTimestampMs)} · cobertura=${formatMs(selected.coverageMs)} ms · medianIntervalMs=${analysis.medianIntervalMs.toFixed(3)} · expectedSamples=${analysis.expectedSamples.toFixed(3)} · minSamples=${analysis.minSamples} · V=${value(selected.valence)} · E=${value(selected.arousal)} · emoción=${selected.categorical} · estado dimensional=${selected.dimensional}`
+        : `${label}: Sin ventana con cobertura suficiente`;
+      lines.push('', describe('Ventana de máxima excitación', analysis.maximum), describe('Ventana de mínima excitación', analysis.minimum));
+      const devoE = Number(document.getElementById('devoArousal').value);
+      if (Number.isFinite(devoE)) lines.push(`Contraste descriptivo DEVO: la excitación ${devoE >= 0 ? 'positiva' : 'negativa'} del estímulo se contrasta con ${devoE >= 0 ? 'la máxima' : 'la mínima'} local; DEVO no interviene en la selección.`);
+      document.getElementById('movingWindows').textContent = lines.join('\n');
+    };
+    const updateDevo = () => {
+      const devoV = Number(document.getElementById('devoValence').value), devoE = Number(document.getElementById('devoArousal').value);
+      if (!globalSummary || !Number.isFinite(devoV) || !Number.isFinite(devoE)) { document.getElementById('devoResult').textContent = '—'; return; }
+      document.getElementById('devoResult').textContent = `Sistema propuesto: ΔV = ${Math.abs(globalSummary.valence - devoV).toFixed(3)} · ΔE = ${Math.abs(globalSummary.arousal - devoE).toFixed(3)}`;
+    };
+    document.getElementById('systemFile').onchange = async event => {
+      try { const payload = JSON.parse(await event.target.files[0].text()); realDurationMs = Number.isFinite(payload?.durationMs) ? payload.durationMs : realDurationMs; rows = U.normalizeSystem(payload); render(); document.getElementById('status').textContent = `Cargados ${rows.length} fotogramas válidos.`; }
+      catch (error) { rows = []; document.getElementById('status').textContent = 'JSON inválido o formato no reconocido.'; console.error(error); }
+    };
+    document.getElementById('recordingFile').onchange = event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => { realDurationMs = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : null; URL.revokeObjectURL(video.src); render(); };
+      video.src = URL.createObjectURL(file);
+    };
+    document.getElementById('devoValence').oninput = render;
+    document.getElementById('devoArousal').oninput = render;
+  </script>
+</body>
+</html>

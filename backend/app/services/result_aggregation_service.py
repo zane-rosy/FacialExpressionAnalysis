@@ -3,7 +3,10 @@ from app.schemas.analysis import (
     AnalysisResponse,
     ProcessingMetadata,
     RussellPoint,
+    DimensionalAffect,
+    DimensionalAffectMatch,
 )
+from app.services.dimensional_affect_service import DimensionalAffectService
 
 # OpenFace emite intensidades de AU en una escala ordinal de 0-5. 
 # Normalizamos dividiendo por este máximo para obtener un valor en [0, 1] sin pérdida de información.
@@ -49,6 +52,7 @@ class ResultAggregationService:
         emotion_probabilities: dict[str, float] = emotion_result["emotion_probabilities"]  # type: ignore[assignment]
         valence: float = affect_result["valence"]
         arousal: float = affect_result["arousal"]
+        dimensional = self.dimensional_affect_service.classify(valence, arousal)
 
         action_units: dict[str, ActionUnit] = {
             name: ActionUnit(
@@ -67,7 +71,13 @@ class ResultAggregationService:
             russellPoint=RussellPoint(
                 x=valence,
                 y=arousal,
-                label=dominant_emotion,
+                label=str(dimensional["label"]),
+            ),
+            dimensionalAffect=DimensionalAffect(
+                label=str(dimensional["label"]),
+                distance=float(dimensional["distance"]),
+                proximityWeight=float(dimensional["proximityWeight"]),
+                topMatches=[DimensionalAffectMatch(**match) for match in dimensional["topMatches"]],
             ),
             processing=ProcessingMetadata(
                 inputType="image",
@@ -80,3 +90,5 @@ class ResultAggregationService:
                 ],
             ),
         )
+    def __init__(self) -> None:
+        self.dimensional_affect_service = DimensionalAffectService()

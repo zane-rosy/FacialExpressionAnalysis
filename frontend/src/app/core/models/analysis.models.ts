@@ -9,6 +9,27 @@ export interface RussellPoint {
   label: string;
 }
 
+export interface AffectiveState {
+  name: string;
+  valence: number;
+  arousal: number;
+}
+
+export interface DimensionalAffectMatch {
+  label: string;
+  valence: number;
+  arousal: number;
+  distance: number;
+  proximityWeight: number;
+}
+
+export interface DimensionalAffect {
+  label: string;
+  distance: number;
+  proximityWeight: number;
+  topMatches: DimensionalAffectMatch[];
+}
+
 export interface ProcessingMetadata {
   inputType: string;
   framesProcessed: number;
@@ -23,6 +44,7 @@ export interface AnalysisResponse {
   valence: number;
   arousal: number;
   russellPoint: RussellPoint;
+  dimensionalAffect: DimensionalAffect;
   processing: ProcessingMetadata;
 }
 
@@ -48,6 +70,7 @@ export interface VideoSummary {
 export interface VideoAnalysisResponse {
   frames: FrameResult[];
   summary: VideoSummary;
+  durationMs: number;
   processing: ProcessingMetadata;
 }
 

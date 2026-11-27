@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prueba MorphCast</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { max-width: 960px; margin: 32px auto; padding: 0 20px; background: #0f172a; color: #e2e8f0; }
+    .grid { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
+    video { width: 100%; max-height: 560px; background: #020617; border-radius: 12px; transform: scaleX(-1); }
+    .card { padding: 20px; border: 1px solid #334155; border-radius: 12px; background: #1e293b; }
+    .value { font-size: 1.4rem; font-weight: 700; color: #7dd3fc; }
+    button { padding: 10px 16px; border: 0; border-radius: 8px; cursor: pointer; background: #38bdf8; color: #082f49; font-weight: 700; }
+    button:disabled { opacity: .5; cursor: wait; }
+    #status { margin: 12px 0 20px; color: #fbbf24; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; color: #cbd5e1; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Prueba local de MorphCast</h1>
+  <p>La cámara y el análisis se ejecutan en el navegador. No se envían imágenes al backend en esta prueba.</p>
+  <div id="status">Preparando SDK…</div>
+  <div class="grid">
+    <div>
+      <video id="camera" autoplay muted playsinline></video>
+      <p><button id="start" disabled>Iniciar análisis</button></p>
+    </div>
+    <section class="card">
+      <h2>Resultado</h2>
+      <p>Rostros: <span id="faces" class="value">—</span></p>
+      <p>Emoción: <span id="emotion" class="value">—</span></p>
+      <p>Atención: <span id="attention" class="value">—</span></p>
+      <details><summary>Evento completo</summary><pre id="raw">—</pre></details>
+    </section>
+  </div>
+
+  <script src="https://ai-sdk.morphcast.com/v1.17/ai-sdk.js"></script>
+  <script>
+    // Pegá aquí tu clave de prueba. No la subas a un repositorio público.
+    const MORPHCAST_LICENSE_KEY = 'sk74658e19e6ee96471d9a7ccb3405606c91142ae67be5';
+    const status = document.getElementById('status');
+    const startButton = document.getElementById('start');
+    const video = document.getElementById('camera');
+    let sdk;
+
+    window.addEventListener(CY.modules().EVENT_BARRIER.eventName, (event) => {
+      const data = event.detail || {};
+      document.getElementById('faces').textContent = data.face_detector?.totalFaces ?? '—';
+      document.getElementById('emotion').textContent = data.face_emotion?.dominantEmotion ?? '—';
+      const attention = data.face_attention?.attention;
+      document.getElementById('attention').textContent = attention == null ? '—' : `${(attention * 100).toFixed(1)}%`;
+      document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+    });
+
+    startButton.addEventListener('click', async () => {
+      startButton.disabled = true;
+      try {
+        sdk = await CY.loader()
+          .licenseKey(MORPHCAST_LICENSE_KEY)
+          .addModule(CY.modules().FACE_DETECTOR.name)
+          .addModule(CY.modules().FACE_EMOTION.name)
+          .addModule(CY.modules().FACE_ATTENTION.name)
+          .load();
+        await sdk.start();
+        status.textContent = 'Análisis activo. Mirá a la cámara.';
+      } catch (error) {
+        console.error(error);
+        status.textContent = 'No se pudo iniciar. Revisá la clave, los permisos y la consola del navegador.';
+        startButton.disabled = false;
+      }
+    });
+
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        status.textContent = 'Cámara lista. Iniciá el análisis.';
+        startButton.disabled = false;
+      } catch (error) {
+        status.textContent = 'No se pudo acceder a la cámara. Usá localhost/HTTPS y aceptá el permiso.';
+        console.error(error);
+      }
+    })();
+  </script>
+</body>
+</html>

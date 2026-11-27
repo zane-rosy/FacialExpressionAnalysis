@@ -83,7 +83,7 @@
   border-radius: 18px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   max-height: 90vh;
-  max-width: 800px;
+  max-width: 1100px;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 32px;
@@ -146,6 +146,7 @@
 /* Recording layout */
 
 .recording-layout {
+  align-items: flex-start;
   display: flex;
   gap: 16px;
 }
@@ -159,8 +160,8 @@
   background: #000;
   border-radius: 12px;
   display: block;
-  max-height: 240px;
-  max-width: 420px;
+  max-height: 600px;
+  max-width: 100%;
   object-fit: contain;
   width: 100%;
 }
@@ -268,6 +269,17 @@
   margin-top: 10px;
   padding: 8px 14px;
   width: 100%;
+}
+
+@media (max-width: 700px) {
+  .recording-layout {
+    flex-direction: column;
+  }
+
+  .recording-pip {
+    align-self: center;
+    width: min(220px, 100%);
+  }
 }
 
 .stop-button:hover {
@@ -464,6 +476,14 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+@media (max-width: 700px) {
+  .result-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
 /* --- Timeline charts (valencia / arousal) --- */
 
 .timeline-charts {
@@ -612,8 +632,145 @@
   margin: 0;
 }
 
+.result-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.result-header h2 {
+  margin: 0;
+}
+
+.result-download-button {
+  font-size: 0.78rem;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 7px 11px;
+}
+
 .russell-card {
   margin-top: 24px;
+}
+
+.dimensional-wide {
+  margin-top: 16px;
+}
+
+.dimensional-wide .label {
+  font-size: 13.6px;
+  margin-bottom: 2px;
+}
+
+.dimensional-wide .value,
+.video-dimensional-summary .value {
+  font-size: 1.5rem;
+}
+
+.dimensional-neighbors {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+.dimensional-neighbors span {
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.video-dimensional-summary {
+  margin: 16px 0 12px;
+}
+
+.video-dimensional-summary .label {
+  font-size: 13.6px;
+  margin-bottom: 2px;
+}
+
+.summary-meta-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-result-grid {
+  margin-bottom: 4px;
+}
+
+.dimensional-explanation {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  margin: 4px 0 10px;
+}
+
+.dimensional-coordinates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-bottom: 16px;
+}
+
+.dimensional-coordinates span {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.dimensional-coordinates strong {
+  color: #f8fafc;
+  margin-left: 4px;
+}
+
+.dimensional-alternatives-title {
+  color: #93c5fd;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  margin: 0 0 7px;
+  text-transform: uppercase;
+}
+
+.dimensional-alternatives {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  max-width: 420px;
+  padding: 0;
+}
+
+.dimensional-alternatives li {
+  align-items: center;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+  display: flex;
+  gap: 10px;
+  padding: 7px 10px;
+}
+
+.alternative-rank {
+  align-items: center;
+  background: rgba(56, 189, 248, 0.16);
+  border-radius: 50%;
+  color: #7dd3fc;
+  display: inline-flex;
+  font-size: 0.75rem;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.alternative-name {
+  color: #f8fafc;
+  flex: 1;
+  font-weight: 600;
+}
+
+.alternative-weight {
+  color: #94a3b8;
+  font-size: 0.82rem;
 }
 
 .russell-plane {
@@ -701,11 +858,22 @@
 /* --- Puntos de referencia del circumplejo --- */
 
 .ref-dot {
-  background: rgba(148, 163, 184, 0.30);
+  background: rgba(148, 163, 184, 0.42);
+  border: 0;
   border-radius: 999px;
+  box-shadow: none;
+  height: 6px;
   position: absolute;
   transform: translate(-50%, -50%);
+  width: 6px;
   z-index: 1;
+}
+
+.ref-dot-primary {
+  background: rgba(148, 163, 184, 0.58);
+  height: 9px;
+  width: 9px;
+  z-index: 2;
 }
 
 .ref-outer {

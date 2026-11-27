@@ -120,9 +120,12 @@ class OpenFaceService:
         command = [
             str(self._feature_extraction_exe),
             "-fdir", str(frame_dir),
+            "-au_static",
             "-aus",
             "-of", str(csv_path),
         ]
+        
+        #logger.info(command)
 
         t0 = time.perf_counter()
         try:

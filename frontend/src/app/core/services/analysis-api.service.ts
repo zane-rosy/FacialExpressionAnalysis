@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { AnalysisResponse, RecordingSavedResponse, StimulusMetadata, VideoAnalysisResponse } from '../models/analysis.models';
+import { AffectiveState, AnalysisResponse, RecordingSavedResponse, StimulusMetadata, VideoAnalysisResponse } from '../models/analysis.models';
 
 @Injectable({ providedIn: 'root' })
 export class AnalysisApiService {
@@ -16,11 +16,17 @@ export class AnalysisApiService {
     return this.http.post<AnalysisResponse>(`${this.baseUrl}/analysis/image`, formData);
   }
 
-  analyzeVideo(file: File, intervalMs: number): Observable<VideoAnalysisResponse> {
+  getAffectiveStates(): Observable<AffectiveState[]> {
+    return this.http.get<AffectiveState[]>(`${this.baseUrl}/analysis/affective-states`);
+  }
+
+  analyzeVideo(file: File, intervalMs: number, saveNormalizedFrames = false): Observable<VideoAnalysisResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
-    const params = new HttpParams().set('interval_ms', intervalMs.toString());
+    const params = new HttpParams()
+      .set('interval_ms', intervalMs.toString())
+      .set('save_normalized_frames', saveNormalizedFrames.toString());
 
     return this.http.post<VideoAnalysisResponse>(
       `${this.baseUrl}/analysis/video`,
@@ -55,4 +61,5 @@ export class AnalysisApiService {
       framesEvaluated,
     });
   }
+
 }

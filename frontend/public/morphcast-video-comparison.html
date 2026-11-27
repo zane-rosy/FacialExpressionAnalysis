@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Comparación MorphCast</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,sans-serif}body{max-width:1100px;margin:24px auto;padding:0 18px;background:#0f172a;color:#e2e8f0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{border:1px solid #334155;border-radius:12px;padding:18px;background:#1e293b}video{width:100%;max-height:480px;background:#020617;border-radius:8px}button{margin:5px 4px 5px 0;padding:9px 13px;border:0;border-radius:7px;background:#38bdf8;color:#082f49;font-weight:700;cursor:pointer}button:disabled{opacity:.5;cursor:wait}input{max-width:100%}#status{display:none;color:#fbbf24;margin:10px 0}table{width:100%;border-collapse:collapse;font-size:.82rem}th,td{padding:6px;border-bottom:1px solid #475569;text-align:left}tbody{display:block;max-height:300px;overflow:auto}thead,tbody tr{display:table;width:100%;table-layout:fixed}.muted{color:#94a3b8}.ok{color:#86efac}.warn{color:#fca5a5}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <h1>Comparación manual: MorphCast vs. mi sistema</h1>
+  <p><a href="system-analysis.html">Abrir análisis independiente del sistema propuesto</a></p>
+  <div id="status" class="hidden">Cargando SDK…</div>
+  <div class="grid">
+    <section class="card">
+      <h2>1. Analizar video</h2>
+      <input id="videoFile" type="file" accept="video/*"><br><br>
+      <video id="video" controls muted playsinline></video>
+      <br><button id="start" disabled>Iniciar análisis</button>
+      <button id="stop" disabled>Detener</button>
+      <label>Suavizado:
+        <select id="smoothness">
+          <option value="0" selected>0 (señal cruda)</option>
+          <option value="0.7">0.7 (predeterminado MorphCast)</option>
+        </select>
+      </label>
+      <button id="downloadJson" disabled>Descargar JSON</button>
+      <button id="downloadCsv" disabled>Descargar CSV</button>
+      <label>Cargar JSON de MorphCast:
+        <input id="morphFile" type="file" accept=".json,application/json">
+      </label>
+      <p>Eventos capturados: <strong id="count">0</strong></p>
+    </section>
+    <section class="card">
+      <h2>2. Cargar resultado propio</h2>
+      <input id="systemFile" type="file" accept=".json,application/json">
+      <p id="comparison" class="muted">Todavía no hay datos para comparar.</p>
+      <pre id="summary">—</pre>
+      <pre id="systemAverage">Análisis independiente del sistema
+n: 0
+valencia: —
+excitación: —
+emoción categórica: —
+estado afectivo dimensional: —</pre>
+      <pre id="morphAverage">Análisis independiente de MorphCast
+valence: —
+arousal: —
+affects38: —
+affects98: —
+muestras: 0</pre>
+      <pre id="independentSegments">Análisis independientes por segmento
+Cargá resultados para ver los tercios temporales.</pre>
+      <pre id="movingWindows">Ventana móvil de excitación
+Cargá resultados para calcularla.</pre>
+      <pre id="segments">Comparación Sistema ↔ MorphCast
+Cargá ambos JSON para ver la comparación.</pre>
+      <div class="devo-box">
+        <h3>Comparación independiente con DEVO</h3>
+        <p class="muted">Diferencias absolutas contra la caracterización del estímulo; no son MAE.</p>
+        <label>Valencia DEVO <input id="devoValence" type="number" min="-1" max="1" step="0.001"></label>
+        <label>Excitación DEVO <input id="devoArousal" type="number" min="-1" max="1" step="0.001"></label>
+        <pre id="devoComparison">—</pre>
+      </div>
+    </section>
+  </div>
+  <section class="card" style="margin-top:18px"><h2>Resultados por timestamp</h2><table><thead><tr><th>Tiempo</th><th>Emoción</th><th>Valencia</th><th>Arousal</th><th>Atención</th><th>Affects 38</th><th>Affects 98</th></tr></thead><tbody id="rows"></tbody></table></section>
+
+  <script src="analysis-utils.js"></script>
+  <script src="https://ai-sdk.morphcast.com/v1.17/ai-sdk.js"></script>
+  <script>
+    const KEY = 'sk74658e19e6ee96471d9a7ccb3405606c91142ae67be5';
+    const video = document.getElementById('video'), status = document.getElementById('status');
+    const start = document.getElementById('start'), stop = document.getElementById('stop');
+    let sdk, stopSdk, terminateSdk, results = [], systemResults = [], analysisActive = false, firstCameraTimestamp = null, recordingDurationMs = null, systemDurationMs = null;
+    const { n, mean, mode, dimensionalLabel, affectSummary, normalizeSystem, normalizeMorph, duration, segments, summarize, pair, pairsByCommonSegment, canonicalEmotion } = AnalysisUtils;
+    const analysisDuration = () => recordingDurationMs > 0 ? recordingDurationMs : systemDurationMs > 0 ? systemDurationMs : 0;
+
+    document.getElementById('videoFile').addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      video.src = URL.createObjectURL(file); results = []; firstCameraTimestamp = null; recordingDurationMs = null; render();
+      video.onloadedmetadata = () => { recordingDurationMs = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : null; start.disabled = false; status.textContent = 'Video listo. Presioná Iniciar análisis y luego Play.'; render(); };
+    });
+
+    window.addEventListener(CY.modules().EVENT_BARRIER.eventName, e => {
+      if (!analysisActive) return;
+      const d = e.detail || {}, emotion = d.face_emotion || {}, av = d.face_arousal_valence || {}, att = d.face_attention || {};
+      const affects38 = av.affects38 ?? d.affects38 ?? null, affects98 = av.affects98 ?? d.affects98 ?? null;
+      const cameraTimestamp = n(d.camera?.frameTimestamp);
+      const videoTimestamp = Math.round(video.currentTime * 1000);
+      if (cameraTimestamp != null && firstCameraTimestamp == null) firstCameraTimestamp = cameraTimestamp;
+      const relativeTimestamp = cameraTimestamp != null && firstCameraTimestamp != null ? cameraTimestamp - firstCameraTimestamp : videoTimestamp;
+      const compactRaw = {
+        face_detector: {status: d.face_detector?.status ?? null, totalFaces: n(d.face_detector?.totalFaces)},
+        face_emotion: {dominantEmotion: emotion.dominantEmotion ?? null, emotion: emotion.emotion ?? null},
+        face_arousal_valence: {valence: n(av.valence), arousal: n(av.arousal), affects38, affects98, quadrant: av.quadrant ?? null},
+        face_attention: {attention: n(att.attention)},
+      };
+      results.push({sampleIndex: results.length, timestampMs: relativeTimestamp, sourceTimestampMs: cameraTimestamp, videoTimeMs: videoTimestamp, dominantEmotion: emotion.dominantEmotion ?? null, valence: n(av.valence), arousal: n(av.arousal), attention: n(att.attention), affects38, affects98, totalFaces: n(d.face_detector?.totalFaces), raw: compactRaw});
+      document.getElementById('count').textContent = results.length; render(); compare();
+    });
+
+    start.onclick = async () => {
+      start.disabled = true; stop.disabled = false;
+      try {
+        results = []; firstCameraTimestamp = null;
+        render();
+        analysisActive = true;
+        const smoothness = Number(document.getElementById('smoothness').value);
+        video.pause();
+        video.currentTime = 0;
+        status.textContent = 'Video reiniciado en 0.000 s. Cargando MorphCast…';
+        const source = CY.createSource.fromVideoElement(video);
+        const loaded = await CY.loader().licenseKey(KEY).source(source)
+          .addModule(CY.modules().FACE_DETECTOR.name, {smoothness})
+          .addModule(CY.modules().FACE_EMOTION.name, {smoothness})
+          .addModule(CY.modules().FACE_AROUSAL_VALENCE.name, {smoothness})
+          .addModule(CY.modules().FACE_ATTENTION.name, {smoothness}).load();
+        sdk = loaded; stopSdk = () => loaded.stop(); terminateSdk = () => loaded.terminate(); await loaded.start(); status.textContent = 'SDK activo. Reproducí el video.';
+        video.play().catch(() => status.textContent = 'SDK activo. Presioná Play en el video.');
+      } catch (err) { analysisActive = false; console.error(err); status.textContent = 'Error: revisá la clave y la consola.'; start.disabled = false; stop.disabled = true; }
+    };
+    function stopAnalysis(message = 'Análisis detenido.') {
+      analysisActive = false;
+      video.pause();
+      if (stopSdk) { try { stopSdk(); } catch (err) { console.warn(err); } }
+      if (terminateSdk) { try { terminateSdk(); } catch (err) { console.warn(err); } }
+      stopSdk = null; terminateSdk = null;
+      stop.disabled = true; start.disabled = false; status.textContent = message;
+    }
+    stop.onclick = () => stopAnalysis();
+    video.addEventListener('ended', () => stopAnalysis('Video terminado. Análisis detenido automáticamente.'));
+
+    function displayAffect(value) {
+      if (value == null) return '—';
+      if (typeof value === 'number') return value.toFixed(3);
+      if (typeof value === 'string') return value;
+      try { return JSON.stringify(value); } catch { return String(value); }
+    }
+    function csvValue(value) {
+      const text = value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value);
+      return `"${String(text).replaceAll('"', '""')}"`;
+    }
+    function render() { document.getElementById('rows').innerHTML = results.slice(-200).map(r => `<tr><td>${(r.timestampMs/1000).toFixed(2)}s</td><td>${r.dominantEmotion ?? '—'}</td><td>${r.valence?.toFixed(3) ?? '—'}</td><td>${r.arousal?.toFixed(3) ?? '—'}</td><td>${r.attention?.toFixed(3) ?? '—'}</td><td>${displayAffect(r.affects38)}</td><td>${displayAffect(r.affects98)}</td></tr>`).join(''); renderIndependentSummaries(); renderSegments(); }
+    function formatSummary(title, summary) {
+      return `${title}\nn: ${summary.n}\nvalencia: ${summary.valence?.toFixed(3) ?? '—'}\nexcitación: ${summary.arousal?.toFixed(3) ?? '—'}\nemoción categórica: ${summary.categorical}\nestado afectivo dimensional: ${summary.dimensional}`;
+    }
+    function renderIndependentSummaries() {
+      const totalDuration = analysisDuration();
+      const morphSummary = summarize(results);
+      const systemSummary = summarize(systemResults);
+      document.getElementById('systemAverage').textContent = formatSummary('Análisis independiente del sistema', systemSummary);
+      document.getElementById('morphAverage').textContent = `${formatSummary('Análisis independiente de MorphCast', morphSummary)}\naffects38: ${morphSummary.affects38}\naffects98: ${morphSummary.affects98}\nduración común utilizada: ${(totalDuration / 1000).toFixed(2)} s`;
+      renderMovingWindows();
+      if (!(totalDuration > 0)) {
+        document.getElementById('independentSegments').textContent = 'No hay duración real disponible. Cargá el video original o un JSON del backend con durationMs.';
+        renderDevoComparison(systemSummary, morphSummary);
+        return totalDuration;
+      }
+      const devoV = Number(document.getElementById('devoValence').value), devoE = Number(document.getElementById('devoArousal').value);
+      const hasDevo = Number.isFinite(devoV) && Number.isFinite(devoE);
+      const lines = [`Análisis independientes por segmento (tercios iguales; duración real de la grabación: ${(totalDuration / 1000).toFixed(2)} s)`, ''];
+      segments(systemResults, totalDuration).forEach(segment => {
+        const summary = summarize(segment.rows);
+        lines.push(`Sistema · S${segment.index + 1} (${(segment.from / 1000).toFixed(2)}–${(segment.to / 1000).toFixed(2)} s): n=${summary.n} · V=${summary.valence?.toFixed(3) ?? '—'} · E=${summary.arousal?.toFixed(3) ?? '—'} · categórica=${summary.categorical} · dimensional=${summary.dimensional}${hasDevo ? ` · ΔV=${summary.valence == null ? '—' : Math.abs(summary.valence - devoV).toFixed(3)} · ΔE=${summary.arousal == null ? '—' : Math.abs(summary.arousal - devoE).toFixed(3)}` : ''}`);
+      });
+      segments(results, totalDuration).forEach(segment => {
+        const summary = summarize(segment.rows);
+        lines.push(`MorphCast · S${segment.index + 1} (${(segment.from / 1000).toFixed(2)}–${(segment.to / 1000).toFixed(2)} s): n=${summary.n} · V=${summary.valence?.toFixed(3) ?? '—'} · E=${summary.arousal?.toFixed(3) ?? '—'} · categórica=${summary.categorical} · dimensional=${summary.dimensional} · affects38=${summary.affects38} · affects98=${summary.affects98}${hasDevo ? ` · ΔV=${summary.valence == null ? '—' : Math.abs(summary.valence - devoV).toFixed(3)} · ΔE=${summary.arousal == null ? '—' : Math.abs(summary.arousal - devoE).toFixed(3)}` : ''}`);
+      });
+      document.getElementById('independentSegments').textContent = lines.join('\n');
+      renderDevoComparison(systemSummary, morphSummary);
+      return totalDuration;
+    }
+    function renderMovingWindows() {
+      const totalDuration = analysisDuration();
+      const systemAnalysis = AnalysisUtils.movingWindowAnalysis(systemResults, totalDuration);
+      const morphAnalysis = AnalysisUtils.movingWindowAnalysis(results, totalDuration);
+      const formatMs = number => number == null ? '—' : Number(number).toFixed(1);
+      const format = (window, includeMorphDetails = false) => `${formatMs(window.startMs)}–${formatMs(window.endMs)} ms · n=${window.n} · primera=${formatMs(window.firstTimestampMs)} · última=${formatMs(window.lastTimestampMs)} · cobertura=${formatMs(window.coverageMs)} ms · V=${window.valence?.toFixed(3) ?? '—'} · E=${window.arousal?.toFixed(3) ?? '—'} · categórica=${window.categorical} · dimensional=${window.dimensional}${includeMorphDetails ? ` · affects38=${window.affects38} · affects98=${window.affects98}` : ''}`;
+      const lines = [`Ventanas móviles (${AnalysisUtils.movingWindowMs} ms; desplazamiento ${AnalysisUtils.movingStepMs} ms; duración común ${(totalDuration / 1000).toFixed(3)} s)`, '', 'Sistema propuesto:', `Control: total=${systemAnalysis.windows.length} · válidas=${systemAnalysis.eligibleWindows.length} (${systemAnalysis.windows.length ? (systemAnalysis.eligibleWindows.length / systemAnalysis.windows.length * 100).toFixed(1) : '0.0'}%) · medianIntervalMs=${systemAnalysis.medianIntervalMs?.toFixed(3) ?? '—'} · expectedSamples=${systemAnalysis.expectedSamples?.toFixed(3) ?? '—'} · minSamples=${systemAnalysis.minSamples ?? '—'} · cobertura mínima=${AnalysisUtils.movingMinCoverageMs} ms`];
+      systemAnalysis.windows.forEach(window => lines.push(`${format(window)}${systemAnalysis.maximum === window ? '  ← máxima válida' : ''}${systemAnalysis.minimum === window ? '  ← mínima válida' : ''}`));
+      lines.push('', 'MorphCast:');
+      lines.push(`Control: total=${morphAnalysis.windows.length} · válidas=${morphAnalysis.eligibleWindows.length} (${morphAnalysis.windows.length ? (morphAnalysis.eligibleWindows.length / morphAnalysis.windows.length * 100).toFixed(1) : '0.0'}%) · medianIntervalMs=${morphAnalysis.medianIntervalMs?.toFixed(3) ?? '—'} · expectedSamples=${morphAnalysis.expectedSamples?.toFixed(3) ?? '—'} · minSamples=${morphAnalysis.minSamples ?? '—'} · cobertura mínima=${AnalysisUtils.movingMinCoverageMs} ms`);
+      morphAnalysis.windows.forEach(window => lines.push(`${format(window, true)}${morphAnalysis.maximum === window ? '  ← máxima válida' : ''}${morphAnalysis.minimum === window ? '  ← mínima válida' : ''}`));
+      const describe = (label, analysis, selected, includeMorphDetails = false) => selected
+        ? `${label}: ${format(selected, includeMorphDetails)} · medianIntervalMs=${analysis.medianIntervalMs.toFixed(3)} · expectedSamples=${analysis.expectedSamples.toFixed(3)} · minSamples=${analysis.minSamples}`
+        : `${label}: Sin ventana con cobertura suficiente`;
+      lines.push('', describe('Máxima del sistema', systemAnalysis, systemAnalysis.maximum), describe('Mínima del sistema', systemAnalysis, systemAnalysis.minimum));
+      lines.push(describe('Máxima de MorphCast', morphAnalysis, morphAnalysis.maximum, true), describe('Mínima de MorphCast', morphAnalysis, morphAnalysis.minimum, true));
+      const devoE = Number(document.getElementById('devoArousal').value);
+      if (Number.isFinite(devoE)) lines.push(`Contraste descriptivo DEVO: la excitación ${devoE >= 0 ? 'positiva' : 'negativa'} del estímulo se contrasta con ${devoE >= 0 ? 'las ventanas máximas' : 'las ventanas mínimas'} locales; DEVO no interviene en la selección.`);
+      document.getElementById('movingWindows').textContent = lines.join('\n');
+    }
+    function renderDevoComparison(systemSummary, morphSummary) {
+      const devoV = Number(document.getElementById('devoValence').value), devoE = Number(document.getElementById('devoArousal').value);
+      if (!Number.isFinite(devoV) || !Number.isFinite(devoE)) { document.getElementById('devoComparison').textContent = '—'; return; }
+      const differences = summary => `ΔV=${summary.valence == null ? '—' : Math.abs(summary.valence - devoV).toFixed(3)} · ΔE=${summary.arousal == null ? '—' : Math.abs(summary.arousal - devoE).toFixed(3)}`;
+      const segmentLines = [`Global · Sistema propuesto: ${differences(systemSummary)}`, `Global · MorphCast: ${differences(morphSummary)}`];
+      const totalDuration = analysisDuration();
+      segments(systemResults, totalDuration).forEach((segment, index) => segmentLines.push(`S${index + 1} · Sistema propuesto: ${differences(summarize(segment.rows))}`));
+      segments(results, totalDuration).forEach((segment, index) => segmentLines.push(`S${index + 1} · MorphCast: ${differences(summarize(segment.rows))}`));
+      document.getElementById('devoComparison').textContent = segmentLines.join('\n');
+    }
+    function download(name, content, type) {
+      const url = URL.createObjectURL(new Blob([content], {type}));
+      const a = document.createElement('a');
+      a.href = url; a.download = name; a.rel = 'noopener'; a.style.display = 'none';
+      document.body.appendChild(a);
+      try { a.click(); status.textContent = `Descarga preparada: ${name}`; }
+      finally { a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    }
+    document.getElementById('downloadJson').onclick=()=>{
+      try { download('morphcast-results.json', JSON.stringify(results, null, 2), 'application/json'); }
+      catch (err) { console.error(err); status.textContent = 'No se pudo preparar el JSON. Volvé a procesar el video.'; }
+    };
+    document.getElementById('downloadCsv').onclick=()=>download('morphcast-results.csv','sampleIndex,timestampMs,videoTimeMs,dominantEmotion,valence,arousal,attention,affects38,affects98,totalFaces\n'+results.map(r=>[r.sampleIndex,r.timestampMs,r.videoTimeMs,csvValue(r.dominantEmotion),r.valence??'',r.arousal??'',r.attention??'',csvValue(r.affects38),csvValue(r.affects98),r.totalFaces??''].join(',')).join('\n'),'text/csv');
+    function renderSegments() {
+      const segmentBox = document.getElementById('segments');
+      if (!results.length || !systemResults.length) { segmentBox.textContent = 'Comparación Sistema ↔ MorphCast\nCargá ambos JSON para ver la comparación.'; return; }
+      const totalDuration = renderIndependentSummaries();
+      if (!(totalDuration > 0)) { segmentBox.textContent = 'Comparación temporal no disponible: falta la duración real del video.'; return; }
+      const pairs = pair(results, systemResults);
+      const commonSegmentPairs = pairsByCommonSegment(pairs, totalDuration);
+      const lines = [`Comparación temporal independiente (umbral: 250 ms; duración común: ${(totalDuration / 1000).toFixed(2)} s)`, `Pares globales=${pairs.length} · pares con ambos timestamps en el mismo segmento=${commonSegmentPairs.length} · pares que cruzan una frontera=${pairs.length - commonSegmentPairs.length}`, ''];
+      segments([0, 1, 2].map(index => ({ timestampMs: index * totalDuration / 3, pair: null })), totalDuration).forEach(segment => {
+        const segmentPairs = commonSegmentPairs.filter(item => {
+          const morphSegment = Math.min(2, Math.floor(item.morph.timestampMs / (totalDuration / 3)));
+          return morphSegment === segment.index;
+        });
+        const error = key => { const values = segmentPairs.map(item => n(item.morph[key]) != null && n(item.system[key]) != null ? Math.abs(item.morph[key] - item.system[key]) : null).filter(value => value != null); return values.length ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(3) : '—'; };
+        const comparable = segmentPairs.filter(item => canonicalEmotion(item.morph.dominantEmotion) && canonicalEmotion(item.system.dominantEmotion));
+        const matches = comparable.filter(item => canonicalEmotion(item.morph.dominantEmotion) === canonicalEmotion(item.system.dominantEmotion)).length;
+        lines.push(`Segmento ${segment.index + 1} (${(segment.from / 1000).toFixed(2)}–${(segment.to / 1000).toFixed(2)} s): pares=${segmentPairs.length} · MAE V=${error('valence')} · MAE E=${error('arousal')} · emoción=${comparable.length ? `${matches}/${comparable.length}` : '—'}`);
+      });
+      segmentBox.textContent = lines.join('\n');
+    }
+    function compare(){
+      document.getElementById('downloadJson').disabled=!results.length;
+      document.getElementById('downloadCsv').disabled=!results.length;
+      if(!systemResults.length)return;
+      const pairs = pair(results, systemResults);
+      const avg=(key)=>{const x=pairs.map(item=>n(item.morph[key])!=null&&n(item.system[key])!=null?Math.abs(item.morph[key]-item.system[key]):null).filter(v=>v!=null);return x.length?(x.reduce((a,b)=>a+b,0)/x.length).toFixed(3):'—'};
+      const emotionPairs = pairs.filter(item => canonicalEmotion(item.morph.dominantEmotion) && canonicalEmotion(item.system.dominantEmotion));
+      const emotionMatches = emotionPairs.filter(item => canonicalEmotion(item.morph.dominantEmotion) === canonicalEmotion(item.system.dominantEmotion)).length;
+      const incomparable = pairs.length - emotionPairs.length;
+      const emotionText = emotionPairs.length ? `${(emotionMatches / emotionPairs.length * 100).toFixed(1)}% (${emotionMatches}/${emotionPairs.length})` : 'sin etiquetas comparables';
+      document.getElementById('comparison').innerHTML=`Pares encontrados: <strong>${pairs.length}</strong> · Coincidencia de emoción comparable: <strong>${emotionText}</strong> · No comparables: <strong>${incomparable}</strong>`;
+      document.getElementById('summary').textContent=`Comparación únicamente sobre pares aceptados\nPares temporales: ${pairs.length}\nMAE valencia: ${avg('valence')}\nMAE excitación: ${avg('arousal')}\nCoincidencia categórica: ${emotionText}`;
+      renderIndependentSummaries();
+      renderSegments();
+    }
+    document.getElementById('systemFile').onchange=async e=>{try{const payload=JSON.parse(await e.target.files[0].text()); systemDurationMs=n(payload?.durationMs); systemResults=normalizeSystem(payload); render(); compare();}catch{document.getElementById('comparison').textContent='JSON inválido o formato no reconocido.';}};
+    document.getElementById('morphFile').onchange=async e=>{
+      try {
+        const payload = JSON.parse(await e.target.files[0].text());
+        results = normalizeMorph(payload);
+        document.getElementById('count').textContent = results.length; render(); compare();
+        status.textContent = `JSON de MorphCast cargado: ${results.length} frames.`;
+      } catch (err) { console.error(err); status.textContent = 'JSON de MorphCast inválido o formato no reconocido.'; }
+    };
+    document.getElementById('devoValence').oninput = () => renderIndependentSummaries();
+    document.getElementById('devoArousal').oninput = () => renderIndependentSummaries();
+  </script>
+</body>
+</html>

@@ -5,11 +5,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   ActionUnit,
   AnalysisResponse,
+  DimensionalAffect,
   StimulusMetadata,
   RussellPoint,
   VideoAnalysisResponse,
+  AffectiveState,
 } from './core/models/analysis.models';
-import { RUSSELL_EMOTIONS, RussellEmotion } from './core/data/russell-emotions';
 import { AnalysisApiService } from './core/services/analysis-api.service';
 
 type RecordingState = 'hidden' | 'setup' | 'countdown' | 'recording' | 'saving' | 'error';
@@ -40,10 +41,12 @@ export class App {
   protected readonly selectedVideoFrame = signal(0);
   protected readonly videoFileName = signal('');
   protected readonly videoIntervalMs = signal(500);
+  protected readonly saveNormalizedFrames = signal(false);
   protected readonly currentFrameImageUrl = signal<string | null>(null);
   protected readonly pendingRecordingFile = signal<File | null>(null);
   protected readonly stimulusMetadata = signal<StimulusMetadata | null>(null);
   protected readonly stimulusLookupPending = signal(false);
+  protected readonly affectiveStates = signal<AffectiveState[]>([]);
 
   // ── Grabación ──
   protected readonly recordingState = signal<RecordingState>('hidden');
@@ -65,6 +68,9 @@ export class App {
   private stimulusBlobUrl: string | null = null;
 
   constructor() {
+    this.analysisApi.getAffectiveStates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: states => this.affectiveStates.set(states),
+    });
     this.destroyRef.onDestroy(() => {
       this.stopWebcam();
       if (this.videoBlobUrl) URL.revokeObjectURL(this.videoBlobUrl);
@@ -116,6 +122,11 @@ export class App {
 
   switchToImage(activateCam: boolean): void {
     this.activeTab.set('image');
+    this.videoResult.set(null);
+    this.videoFileName.set('');
+    this.currentFrameImageUrl.set(null);
+    this.pendingRecordingFile.set(null);
+    this.resultTab.set('frame');
     this.capturedImageUrl.set(null);
     if (!activateCam) {
       this.stopWebcam();
@@ -223,7 +234,7 @@ export class App {
     this.errorMessage.set('');
     this.videoResult.set(null);
 
-    this.analysisApi.analyzeVideo(file, this.videoIntervalMs()).pipe(
+    this.analysisApi.analyzeVideo(file, this.videoIntervalMs(), this.saveNormalizedFrames()).pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: (response) => {
@@ -246,6 +257,19 @@ export class App {
   selectVideoFrame(index: number): void {
     this.selectedVideoFrame.set(index);
     this._captureFrameImage();
+  }
+
+  downloadVideoAnalysisJson(): void {
+    const result = this.videoResult();
+    if (!result) return;
+
+    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${this.videoFileName().replace(/\.[^.]+$/, '') || 'video-analysis'}-frames.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   /** Captura la imagen del frame actual del video usando el blob URL. */
@@ -476,6 +500,10 @@ export class App {
     return this.videoResult()?.summary?.russellPoints ?? [];
   }
 
+  videoDurationSeconds(): number {
+    return (this.videoResult()?.durationMs ?? 0) / 1000;
+  }
+
   /** String con coordenadas para el SVG polyline que conecta los puntos. */
   trajectoryLinePoints(): string {
     return this.trajectoryPoints()
@@ -544,33 +572,167 @@ export class App {
   // Plano de Russell — puntos de referencia
   // ------------------------------------------------------------------
 
-  referenceEmotions(): RussellEmotion[] {
-    return RUSSELL_EMOTIONS;
+  private readonly affectiveStateTranslations: Record<string, string> = {
+    Sleepy: 'Somnoliento', Tired: 'Cansado', Afraid: 'Asustado', Angry: 'Enojado',
+    Calm: 'Calmado', Relaxed: 'Relajado', Content: 'Conforme', Depressed: 'Deprimido',
+    Discontent: 'Descontento', Determined: 'Determinado', Happy: 'Feliz', Anxious: 'Ansioso',
+    Good: 'Bien', Pensive: 'Pensativo', Impressed: 'Impresionado', Frustrated: 'Frustrado',
+    Disappointed: 'Decepcionado', Bored: 'Aburrido', Annoyed: 'Molesto', Enraged: 'Furioso',
+    Excited: 'Entusiasmado', Melancholy: 'Melancólico', Satisfied: 'Satisfecho',
+    Distressed: 'Angustiado', Uncomfortable: 'Incómodo', Worried: 'Preocupado',
+    Amused: 'Divertido', Apathetic: 'Apático', Peaceful: 'En paz', Contemplative: 'Contemplativo',
+    Embarrassed: 'Avergonzado', Sad: 'Triste', Hopeful: 'Esperanzado', Pleased: 'Complacido',
+  };
+
+  translateAffectiveState(name: string): string {
+    return this.affectiveStateTranslations[name] ?? name;
+  }
+
+  referenceEmotions(): AffectiveState[] {
+    return this.affectiveStates();
+  }
+
+  comparableDominantEmotion(analysis: AnalysisResponse): string {
+    const comparable = Object.entries(analysis.emotionProbabilities)
+      .filter(([name]) => name !== 'Desprecio')
+      .sort(([, first], [, second]) => second - first);
+    if (analysis.dominantEmotion === 'Desprecio' && comparable[0]?.[0]) {
+      return `Desprecio (${comparable[0][0]})`;
+    }
+    return analysis.dominantEmotion;
+  }
+
+  comparableVideoDominantEmotion(): string {
+    const frames = this.videoResult()?.frames ?? [];
+    if (!frames.length) return 'N/A';
+    const rawCounts = new Map<string, number>();
+    frames.forEach(frame => {
+      const label = frame.analysis.dominantEmotion;
+      rawCounts.set(label, (rawCounts.get(label) ?? 0) + 1);
+    });
+    const rawDominant = [...rawCounts.entries()].sort(([, first], [, second]) => second - first)[0][0];
+    if (rawDominant === 'Desprecio') {
+      const alternatives = frames
+        .filter(frame => frame.analysis.dominantEmotion === 'Desprecio')
+        .map(frame => this.comparableDominantEmotion(frame.analysis).replace('Desprecio (', '').replace(')', ''));
+      const counts = new Map<string, number>();
+      alternatives.forEach(label => counts.set(label, (counts.get(label) ?? 0) + 1));
+      const second = [...counts.entries()].sort(([, first], [, second]) => second - first)[0]?.[0];
+      return second ? `Desprecio (${second})` : rawDominant;
+    }
+    return rawDominant;
+  }
+
+  videoDimensionalAffect(): DimensionalAffect | null {
+    const summary = this.videoResult()?.summary;
+    const states = this.affectiveStates();
+    if (!summary || !states.length) return null;
+    const sameQuadrant = states.filter(state => this.isSameQuadrant(
+      summary.avgValence,
+      summary.avgArousal,
+      state.valence,
+      state.arousal,
+    ));
+    const candidates = sameQuadrant.length ? sameQuadrant : states;
+    const ranked = candidates
+      .map(state => ({
+        state,
+        distance: Math.hypot(state.valence - summary.avgValence, state.arousal - summary.avgArousal),
+      }))
+      .sort((a, b) => a.distance - b.distance);
+    const selected = ranked.slice(0, 3);
+    const inverse = selected.map(item => 1 / (item.distance || Number.EPSILON));
+    const total = inverse.reduce((sum, value) => sum + value, 0);
+    const topMatches = selected.map((item, index) => ({
+      label: item.state.name,
+      valence: item.state.valence,
+      arousal: item.state.arousal,
+      distance: Number(item.distance.toFixed(6)),
+      proximityWeight: Number((inverse[index] / total).toFixed(6)),
+    }));
+    return {
+      label: topMatches[0].label,
+      distance: topMatches[0].distance,
+      proximityWeight: topMatches[0].proximityWeight,
+      topMatches,
+    };
+  }
+
+  private isSameQuadrant(
+    pointValence: number,
+    pointArousal: number,
+    stateValence: number,
+    stateArousal: number,
+  ): boolean {
+    const sign = (value: number): number => value >= 0 ? 1 : -1;
+    const pointX = sign(pointValence);
+    const pointY = sign(pointArousal);
+    const stateX = sign(stateValence);
+    const stateY = sign(stateArousal);
+    // Un estado sobre un eje puede acompañar al cuadrante, pero nunca
+    // habilita que un estado del cuadrante opuesto sea candidato.
+    const onXAxis = stateValence === 0;
+    const onYAxis = stateArousal === 0;
+    return (pointX === stateX || onXAxis) && (pointY === stateY || onYAxis);
+  }
+
+  isPrimaryAffectiveState(name: string): boolean {
+    return new Set(['Happy', 'Sad', 'Angry', 'Afraid', 'Excited', 'Calm']).has(name);
   }
 
   labelPositions(): Array<{ label: string; left: number; top: number }> {
-    return RUSSELL_EMOTIONS.map(e => {
-      const r = Math.hypot(e.x, e.y);
-      const angle = Math.atan2(e.y, e.x);
-      const labelR = Math.min(r * 1.10, 0.90);
+    const labels = this.affectiveStates().map(e => {
+      const r = Math.hypot(e.valence, e.arousal);
+      const angle = Math.atan2(e.arousal, e.valence);
+      const labelR = Math.min(r + 0.08, 0.90);
       const lx = labelR * Math.cos(angle);
       const ly = labelR * Math.sin(angle);
       return {
-        label: e.label,
+        label: this.translateAffectiveState(e.name),
         left: (lx + 1) * 50,
         top: 100 - ((ly + 1) * 50),
       };
     });
+
+    // Separate labels in the rendered plane while keeping them close to their
+    // reference point. The coordinates of the dots remain untouched.
+    for (let iteration = 0; iteration < 12; iteration++) {
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          const a = labels[i];
+          const b = labels[j];
+          const dx = b.left - a.left;
+          const dy = b.top - a.top;
+          const distance = Math.hypot(dx, dy) || 0.01;
+          const minimum = 5.2;
+          if (distance < minimum) {
+            const push = (minimum - distance) / distance * 0.35;
+            const x = dx * push;
+            const y = dy * push;
+            a.left -= x;
+            a.top -= y;
+            b.left += x;
+            b.top += y;
+          }
+        }
+      }
+    }
+
+    return labels.map(label => ({
+      ...label,
+      left: Math.max(3, Math.min(97, label.left)),
+      top: Math.max(3, Math.min(97, label.top)),
+    }));
   }
 
-  nearestEmotions(): RussellEmotion[] {
+  nearestEmotions(): AffectiveState[] {
     const point = this.currentAnalysis()?.russellPoint;
     if (!point) return [];
 
-    return RUSSELL_EMOTIONS
+    return this.affectiveStates()
       .map(e => ({
         emotion: e,
-        dist: Math.hypot(e.x - point.x, e.y - point.y),
+        dist: Math.hypot(e.valence - point.x, e.arousal - point.y),
       }))
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 3)

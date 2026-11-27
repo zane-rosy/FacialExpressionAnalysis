@@ -18,6 +18,7 @@ class FrameCapture:
     index: int
     timestamp_ms: float
     path: Path
+    duration_ms: float
     _shared_dir: Path | None = field(default=None, repr=False)
 
 
@@ -71,6 +72,7 @@ class FrameExtractionService:
                 )
 
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration_ms = (total_frames / fps) * 1000 if total_frames > 0 else 0.0
             frame_step = max(1, int(fps * interval_ms / 1000))
             expected = min(total_frames // frame_step + 1, 999) if total_frames > 0 else "?"
 
@@ -98,6 +100,7 @@ class FrameExtractionService:
                         index=extracted,
                         timestamp_ms=round(timestamp_ms, 1),
                         path=frame_path,
+                        duration_ms=round(duration_ms, 1),
                         _shared_dir=shared_dir,
                     ))
                     extracted += 1
